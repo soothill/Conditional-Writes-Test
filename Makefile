@@ -5,6 +5,12 @@ GOLANGCI_LINT := golangci-lint
 # Integration tests require -tags integration and S3_BUCKET to be set.
 INTEGRATION_FLAGS := -tags integration -v -count=1
 
+# Regex passed to testfmt --filter: only the conditional S3 tests are shown by
+# default. Tests that do NOT match this pattern are still run and still counted
+# in the summary, but their output is suppressed when they pass. If any of them
+# fail they always appear regardless of the filter.
+TESTFMT_FILTER := Conditional|EdgeCases
+
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -13,10 +19,10 @@ test: ## Run all integration tests (requires S3_BUCKET)
 	go test $(INTEGRATION_FLAGS) -timeout 10m ./s3test/
 
 test-pretty: ## Run all integration tests with clean, readable output (requires S3_BUCKET)
-	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/testfmt
+	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/testfmt --filter '$(TESTFMT_FILTER)'
 
 test-json: ## Run all integration tests and emit results as JSON (requires S3_BUCKET)
-	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/testfmt --format=json
+	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/testfmt --format=json --filter '$(TESTFMT_FILTER)'
 
 test-verbose: ## Run all integration tests with extra verbose output
 	go test $(INTEGRATION_FLAGS) -timeout 10m -run . ./s3test/

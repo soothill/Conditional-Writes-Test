@@ -6,6 +6,14 @@
 //
 //	go test -tags integration -v -json ./s3test/ | go run ./cmd/testfmt
 //	go test -tags integration -v -json ./s3test/ | go run ./cmd/testfmt --format=json
+//
+// Flags:
+//
+//	--format=text|json   Output format (default: text)
+//	--filter=<regex>     Only display test groups whose name matches this regex.
+//	                     Failing groups are always displayed regardless of the
+//	                     filter. The summary counts all tests. Useful to suppress
+//	                     unit-test noise when running integration tests.
 package main
 
 import (
@@ -14,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -153,7 +162,20 @@ type jsonResult struct {
 
 func main() {
 	format := flag.String("format", "text", "Output format: text or json")
+	filterStr := flag.String("filter", "",
+		"Only display test groups matching this regex; failures always shown regardless")
 	flag.Parse()
+
+	// Compile the filter regex, if one was provided.
+	var filterRe *regexp.Regexp
+	if *filterStr != "" {
+		var err error
+		filterRe, err = regexp.Compile(*filterStr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid --filter regex: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
 	useColor := isColorEnabled() && *format == "text"
 
@@ -240,10 +262,23 @@ func main() {
 	}
 
 	if *format == "json" {
-		renderJSON(nodes, topOrder)
+		renderJSON(nodes, topOrder, filterRe)
 	} else {
-		renderText(nodes, topOrder, pkgElapsed, pkgFailed, useColor)
+		renderText(nodes, topOrder, pkgElapsed, pkgFailed, filterRe, useColor)
 	}
+}
+
+// shouldDisplay returns true when a top-level test group should be rendered.
+// A group is always shown when it failed (so failures are never hidden), or
+// when no filter is active, or when its name matches the filter regex.
+func shouldDisplay(topName string, result string, filterRe *regexp.Regexp) bool {
+	if result == "fail" {
+		return true // failures are always shown, filter or not
+	}
+	if filterRe == nil {
+		return true // no filter — show everything
+	}
+	return filterRe.MatchString(topName)
 }
 
 // ── text renderer ──────────────────────────────────────────────────────────
@@ -279,6 +314,7 @@ func renderText(
 	topOrder []string,
 	pkgElapsed float64,
 	pkgFailed bool,
+	filterRe *regexp.Regexp,
 	useColor bool,
 ) {
 	const (
@@ -294,7 +330,7 @@ func renderText(
 			continue
 		}
 
-		// Tally the top-level result.
+		// Always tally — the summary counts every test even if not displayed.
 		switch top.result {
 		case "pass":
 			passed++
@@ -302,6 +338,11 @@ func renderText(
 			failed++
 		case "skip":
 			skipped++
+		}
+
+		// Skip display if the filter is active and this group passes/skips.
+		if !shouldDisplay(topName, top.result, filterRe) {
+			continue
 		}
 
 		// ── Group header ─────────────────────────────────────────────────
@@ -405,12 +446,17 @@ func renderText(
 
 // ── JSON renderer ──────────────────────────────────────────────────────────
 
-func renderJSON(nodes map[string]*testNode, topOrder []string) {
+func renderJSON(nodes map[string]*testNode, topOrder []string, filterRe *regexp.Regexp) {
 	var results []jsonResult
 
 	for _, topName := range topOrder {
 		top := nodes[topName]
 		if top == nil {
+			continue
+		}
+
+		// Apply the same filter logic as the text renderer.
+		if !shouldDisplay(topName, top.result, filterRe) {
 			continue
 		}
 
