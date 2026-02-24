@@ -10,7 +10,26 @@ Go integration test suite for validating AWS S3 conditional write and conditiona
 
 ## Configuration
 
-Configuration is provided via environment variables:
+Parameters can be supplied via a `.env` config file, environment variables, or both. **Environment variables always take precedence over the config file.**
+
+### Config file (recommended)
+
+Copy the sample file and fill in your values:
+
+```bash
+cp .env.example .env
+# edit .env with your bucket name, credentials, etc.
+```
+
+The `.env` file is listed in `.gitignore` and will never be committed. `.env.example` is the committed template.
+
+The config file is found automatically (first match wins):
+
+1. Path in the `S3_CONFIG_FILE` environment variable
+2. `.env` in the current directory
+3. `.env` one directory up (project root when running `go test ./s3test/`)
+
+### Parameters
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
@@ -21,33 +40,50 @@ Configuration is provided via environment variables:
 | `AWS_SECRET_ACCESS_KEY` | No | SDK default chain | Secret key |
 | `AWS_SESSION_TOKEN` | No | - | Session token |
 | `S3_PATH_STYLE` | No | `true` if endpoint set | Force path-style addressing |
+| `S3_CONFIG_FILE` | No | `.env` (auto-found) | Path to a custom config file |
 
 ## Running Tests
 
 ### All tests
 
 ```bash
+# Using a .env file (recommended)
+cp .env.example .env   # fill in your values once
+make test
+
+# Or pass values inline
 S3_BUCKET=my-test-bucket make test
 ```
 
 ### Individual test groups
 
 ```bash
-S3_BUCKET=my-bucket make test-put        # PutObject conditional writes
-S3_BUCKET=my-bucket make test-multipart  # CompleteMultipartUpload conditional writes
-S3_BUCKET=my-bucket make test-copy       # CopyObject conditional writes/reads
-S3_BUCKET=my-bucket make test-get        # GetObject conditional reads
-S3_BUCKET=my-bucket make test-head       # HeadObject conditional reads
-S3_BUCKET=my-bucket make test-edge       # Edge cases (concurrency, large objects, etc.)
+make test-put        # PutObject conditional writes
+make test-multipart  # CompleteMultipartUpload conditional writes
+make test-copy       # CopyObject conditional writes/reads
+make test-get        # GetObject conditional reads
+make test-head       # HeadObject conditional reads
+make test-edge       # Edge cases (concurrency, large objects, etc.)
 ```
 
 ### Single subtest
 
 ```bash
-S3_BUCKET=my-bucket go test ./s3test/ -v -count=1 -run TestPutObjectConditionalWrites/IfMatch/CorrectETag
+go test -tags integration -v -count=1 -run TestPutObjectConditionalWrites/IfMatch/CorrectETag ./s3test/
 ```
 
 ### With a custom endpoint (MinIO)
+
+Add these lines to your `.env` file:
+
+```
+S3_BUCKET=test
+S3_ENDPOINT=http://localhost:9000
+AWS_ACCESS_KEY_ID=minioadmin
+AWS_SECRET_ACCESS_KEY=minioadmin
+```
+
+Or pass them inline:
 
 ```bash
 S3_ENDPOINT=http://localhost:9000 \
@@ -93,7 +129,7 @@ make check          Run fmt, lint, vet, and all tests
 
 ```
 s3test/
-  config.go           Configuration loading from environment variables
+  config.go           Configuration loading from .env file and environment variables
   client.go           S3 client construction
   helpers.go          Shared test utilities (assertions, cleanup, key generation)
   helpers_test.go     Unit tests for helper functions

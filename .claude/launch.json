@@ -1,0 +1,34 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "MinIO",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": [
+        "run", "--rm",
+        "--name", "minio-s3test",
+        "-p", "9000:9000",
+        "-p", "9001:9001",
+        "-e", "MINIO_ROOT_USER=minioadmin",
+        "-e", "MINIO_ROOT_PASSWORD=minioadmin",
+        "minio/minio",
+        "server", "/data",
+        "--console-address", ":9001"
+      ],
+      "port": 9000
+    },
+    {
+      "name": "LocalStack",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": [
+        "run", "--rm",
+        "--name", "localstack-s3test",
+        "-p", "4566:4566",
+        "-e", "SERVICES=s3",
+        "-e", "DEFAULT_REGION=us-east-1",
+        "localstack/localstack"
+      ],
+      "port": 4566
+    }
+  ]
+}
