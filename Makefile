@@ -1,4 +1,4 @@
-.PHONY: test test-verbose test-unit test-put test-multipart test-copy test-get test-head test-edge lint fmt vet tidy clean check help
+.PHONY: test test-pretty test-json test-verbose test-unit test-put test-multipart test-copy test-get test-head test-edge lint fmt vet tidy clean check help
 
 GOLANGCI_LINT := golangci-lint
 
@@ -11,6 +11,12 @@ help: ## Show this help
 
 test: ## Run all integration tests (requires S3_BUCKET)
 	go test $(INTEGRATION_FLAGS) -timeout 10m ./s3test/
+
+test-pretty: ## Run all integration tests with clean, readable output (requires S3_BUCKET)
+	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/testfmt
+
+test-json: ## Run all integration tests and emit results as JSON (requires S3_BUCKET)
+	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/testfmt --format=json
 
 test-verbose: ## Run all integration tests with extra verbose output
 	go test $(INTEGRATION_FLAGS) -timeout 10m -run . ./s3test/

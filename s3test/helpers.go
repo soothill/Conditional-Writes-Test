@@ -32,10 +32,13 @@ const (
 )
 
 // testContext returns a context that inherits from t.Context() (cancelled when
-// the test ends) and adds a 30-second per-operation deadline.
+// the test ends), adds a 30-second per-operation deadline, and injects t into
+// the context so the s3responseLogger middleware can log S3 responses against
+// the correct test.
 func testContext(t testing.TB) (context.Context, context.CancelFunc) {
 	t.Helper()
-	return context.WithTimeout(t.Context(), 30*time.Second)
+	ctx := injectTesting(t.Context(), t)
+	return context.WithTimeout(ctx, 30*time.Second)
 }
 
 // uniqueKey generates a unique S3 key using the test name and a nanosecond
@@ -86,11 +89,25 @@ func deleteObject(t testing.TB, client *s3.Client, bucket, key string) {
 	}
 }
 
-// cleanupKey registers a t.Cleanup function to delete the given key after the test.
+// cleanupKey registers a t.Cleanup function to delete the given key after the
+// test. It uses context.Background() — NOT testContext(t) — so the cleanup
+// DeleteObject call is invisible to the s3responseLogger middleware and never
+// overwrites the last [S3] log line that belongs to the test itself.
 func cleanupKey(t testing.TB, client *s3.Client, bucket, key string) {
 	t.Helper()
 	t.Cleanup(func() {
-		deleteObject(t, client, bucket, key)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		if err != nil {
+			var nsk *types.NoSuchKey
+			if !errors.As(err, &nsk) {
+				t.Logf("cleanup: delete %s: %v", key, err)
+			}
+		}
 	})
 }
 
