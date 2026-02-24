@@ -22,5 +22,12 @@
 Thumbs.db
 
 # Environment files (may contain credentials)
+# .env.example is the only .env* file that should be committed.
 .env
 .env.local
+.env.*
+!.env.example
+
+# Matrix config (user-specific; copy testmatrix.json.example to create your own)
+testmatrix.json
+/testmatrix

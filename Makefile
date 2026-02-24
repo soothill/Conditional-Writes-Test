@@ -1,4 +1,4 @@
-.PHONY: test test-pretty test-json test-verbose test-unit test-put test-multipart test-copy test-get test-head test-edge lint fmt vet tidy clean check help
+.PHONY: test test-pretty test-json test-matrix test-matrix-json test-verbose test-unit test-put test-multipart test-copy test-get test-head test-edge lint fmt vet tidy clean check help
 
 GOLANGCI_LINT := golangci-lint
 
@@ -23,6 +23,12 @@ test-pretty: ## Run all integration tests with clean, readable output (requires 
 
 test-json: ## Run all integration tests and emit results as JSON (requires S3_BUCKET)
 	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/testfmt --format=json --filter '$(TESTFMT_FILTER)'
+
+test-matrix: ## Run tests against all providers in testmatrix.json and print comparison table
+	go run ./cmd/testmatrix
+
+test-matrix-json: ## Run tests against all providers and emit comparison as JSON
+	go run ./cmd/testmatrix --format=json
 
 test-verbose: ## Run all integration tests with extra verbose output
 	go test $(INTEGRATION_FLAGS) -timeout 10m -run . ./s3test/
