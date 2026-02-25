@@ -1,14 +1,14 @@
-.PHONY: test test-pretty test-json test-matrix test-matrix-json test-verbose test-unit test-put test-multipart test-copy test-get test-head test-edge lint fmt vet tidy clean check help
+.PHONY: test test-pretty test-json test-matrix test-matrix-json test-verbose test-unit test-put test-multipart test-copy test-get test-head test-edge lint fmt vet tidy clean build check help
 
 GOLANGCI_LINT := golangci-lint
 
 # Integration tests require -tags integration and S3_BUCKET to be set.
 INTEGRATION_FLAGS := -tags integration -v -count=1
 
-# Regex passed to testfmt --filter: only the conditional S3 tests are shown by
-# default. Tests that do NOT match this pattern are still run and still counted
-# in the summary, but their output is suppressed when they pass. If any of them
-# fail they always appear regardless of the filter.
+# Regex passed to s3conditionaltest run --filter: only the conditional S3 tests
+# are shown by default. Tests that do NOT match this pattern are still run and
+# still counted in the summary, but their output is suppressed when they pass.
+# If any of them fail they always appear regardless of the filter.
 TESTFMT_FILTER := Conditional|EdgeCases
 
 help: ## Show this help
@@ -19,16 +19,16 @@ test: ## Run all integration tests (requires S3_BUCKET)
 	go test $(INTEGRATION_FLAGS) -timeout 10m ./s3test/
 
 test-pretty: ## Run all integration tests with clean, readable output (requires S3_BUCKET)
-	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/testfmt --filter '$(TESTFMT_FILTER)'
+	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/s3conditionaltest run --filter '$(TESTFMT_FILTER)'
 
 test-json: ## Run all integration tests and emit results as JSON (requires S3_BUCKET)
-	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/testfmt --format=json --filter '$(TESTFMT_FILTER)'
+	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/s3conditionaltest run --format=json --filter '$(TESTFMT_FILTER)'
 
 test-matrix: ## Run tests against all providers in testmatrix.json and print comparison table
-	go run ./cmd/testmatrix
+	go run ./cmd/s3conditionaltest matrix
 
 test-matrix-json: ## Run tests against all providers and emit comparison as JSON
-	go run ./cmd/testmatrix --format=json
+	go run ./cmd/s3conditionaltest matrix --format=json
 
 test-verbose: ## Run all integration tests with extra verbose output
 	go test $(INTEGRATION_FLAGS) -timeout 10m -run . ./s3test/
@@ -54,6 +54,9 @@ test-head: ## Run only HeadObject conditional read tests
 test-edge: ## Run only edge case tests
 	go test $(INTEGRATION_FLAGS) -timeout 10m -run TestEdgeCases ./s3test/
 
+build: ## Build the s3conditionaltest CLI tool to the repo root
+	go build -o s3conditionaltest ./cmd/s3conditionaltest/
+
 lint: ## Run golangci-lint
 	$(GOLANGCI_LINT) run ./...
 
@@ -70,4 +73,4 @@ tidy: ## Tidy go modules
 clean: ## Clean test cache
 	go clean -testcache
 
-check: fmt lint vet test ## Run fmt, lint, vet, and all integration tests
+check: fmt lint vet build test ## Run fmt, lint, vet, build, and all integration tests

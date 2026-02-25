@@ -130,9 +130,52 @@ func requirePreconditionFailed(t testing.TB, err error) {
 }
 
 // requireNotModified asserts that err is an HTTP 304 Not Modified response.
+// Use this for conditional GET/HEAD failures; for CopyObject and conditional
+// write failures use requirePreconditionFailed — S3 returns 412, not 304, for
+// all CopyObject conditional header failures.
 func requireNotModified(t testing.TB, err error) {
 	t.Helper()
 	requireHTTPStatus(t, err, 304)
+}
+
+// requireIfMatchKeyMissing asserts that err is either an HTTP 404 Not Found or
+// an HTTP 412 Precondition Failed response. When IfMatch is specified for a key
+// that does not exist, AWS S3 returns 404 (the key genuinely does not exist and
+// there is no ETag to compare), while some other S3-compatible implementations
+// return 412 (the ETag condition cannot be satisfied). Both responses indicate
+// that the conditional write was correctly rejected.
+func requireIfMatchKeyMissing(t testing.TB, err error) {
+	t.Helper()
+	require.Error(t, err, "expected an error for IfMatch on non-existent key but got nil")
+
+	var respErr *awshttp.ResponseError
+	require.True(t, errors.As(err, &respErr),
+		"expected *awshttp.ResponseError (404 or 412), got %T: %v", err, err)
+
+	status := respErr.HTTPStatusCode()
+	require.True(t, status == 404 || status == 412,
+		"expected HTTP 404 (NotFound) or 412 (PreconditionFailed) for IfMatch on missing key, got HTTP %d: %v",
+		status, err)
+}
+
+// requireConditionalWriteFailure asserts that err is either an HTTP 412
+// Precondition Failed or an HTTP 409 ConditionalRequestConflict response.
+// S3 returns 412 when a conditional header fails at request-evaluation time.
+// It returns 409 when a competing write races and completes between the moment
+// S3 evaluates the condition and the moment the write is committed. Under high
+// concurrency both are valid failure outcomes for conditional writes.
+func requireConditionalWriteFailure(t testing.TB, err error) {
+	t.Helper()
+	require.Error(t, err)
+
+	var respErr *awshttp.ResponseError
+	require.True(t, errors.As(err, &respErr),
+		"expected *awshttp.ResponseError (412 or 409), got %T: %v", err, err)
+
+	status := respErr.HTTPStatusCode()
+	require.True(t, status == 412 || status == 409,
+		"expected HTTP 412 (PreconditionFailed) or 409 (ConditionalRequestConflict), got HTTP %d: %v",
+		status, err)
 }
 
 // stripQuotes removes surrounding double quotes from an ETag string returned

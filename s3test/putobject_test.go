@@ -126,7 +126,10 @@ func TestPutObjectConditionalWrites(t *testing.T) {
 				Body:    strings.NewReader("should-not-exist"),
 				IfMatch: aws.String(emptyObjectETag),
 			})
-			requirePreconditionFailed(t, err)
+			// AWS S3 returns 404 NoSuchKey when IfMatch is used against a key
+			// that does not exist (no ETag to compare). Other implementations
+			// may return 412 Precondition Failed instead.
+			requireIfMatchKeyMissing(t, err)
 		})
 
 		t.Run("StaleETag", func(t *testing.T) {

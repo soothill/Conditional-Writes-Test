@@ -38,12 +38,16 @@ func TestEdgeCases(t *testing.T) {
 			if err == nil {
 				successCount++
 			} else {
-				requirePreconditionFailed(t, err)
+				// S3 returns 412 when the condition fails at evaluation time, or
+				// 409 ConditionalRequestConflict when a competing write races
+				// and completes between condition evaluation and the commit.
+				// Both are valid outcomes under concurrent load.
+				requireConditionalWriteFailure(t, err)
 				failCount++
 			}
 		}
 		assert.Equal(t, 1, successCount, "exactly one concurrent write should succeed")
-		assert.Equal(t, concurrentWorkers-1, failCount, "all other writes should get 412")
+		assert.Equal(t, concurrentWorkers-1, failCount, "all other writes should fail (412 or 409)")
 	})
 
 	t.Run("ConcurrentIfMatch", func(t *testing.T) {
@@ -70,12 +74,16 @@ func TestEdgeCases(t *testing.T) {
 			if err == nil {
 				successCount++
 			} else {
-				requirePreconditionFailed(t, err)
+				// S3 returns 412 when the condition fails at evaluation time, or
+				// 409 ConditionalRequestConflict when a competing write races
+				// and completes between condition evaluation and the commit.
+				// Both are valid outcomes under concurrent load.
+				requireConditionalWriteFailure(t, err)
 				failCount++
 			}
 		}
 		assert.Equal(t, 1, successCount, "exactly one concurrent IfMatch write should succeed")
-		assert.Equal(t, concurrentWorkers-1, failCount, "all other writes should get 412")
+		assert.Equal(t, concurrentWorkers-1, failCount, "all other writes should fail (412 or 409)")
 	})
 
 	t.Run("EmptyBody", func(t *testing.T) {
@@ -218,8 +226,11 @@ func TestEdgeCases(t *testing.T) {
 		ctx, cancel := testContext(t)
 		defer cancel()
 
-		// Setting both IfNoneMatch and IfMatch simultaneously is invalid.
-		// S3 rejects this with an error (typically 400 Bad Request).
+		// Setting both IfNoneMatch=* and IfMatch simultaneously is logically
+		// contradictory: IfNoneMatch requires the key to NOT exist while IfMatch
+		// requires the key to exist with a specific ETag. At least one condition
+		// must fail, so S3 always returns an error (412 from whichever condition
+		// it evaluates first, or 400 if it detects the invalid combination).
 		_, err := testClient.PutObject(ctx, &s3.PutObjectInput{
 			Bucket:      aws.String(testBucket),
 			Key:         aws.String(key),
@@ -227,7 +238,7 @@ func TestEdgeCases(t *testing.T) {
 			IfNoneMatch: aws.String("*"),
 			IfMatch:     aws.String(etag),
 		})
-		require.Error(t, err, "PutObject with both IfNoneMatch and IfMatch should be rejected")
+		require.Error(t, err, "PutObject with both IfNoneMatch=* and IfMatch should be rejected")
 		t.Logf("mutual exclusion error (expected): %v", err)
 	})
 }

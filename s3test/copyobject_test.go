@@ -141,7 +141,10 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 				CopySource: aws.String(copySource(testBucket, srcKey)),
 				IfMatch:    aws.String(emptyObjectETag),
 			})
-			requirePreconditionFailed(t, err)
+			// AWS S3 returns 404 NoSuchKey when IfMatch is used against a
+			// destination key that does not exist (no ETag to compare). Other
+			// implementations may return 412 Precondition Failed instead.
+			requireIfMatchKeyMissing(t, err)
 		})
 	})
 
@@ -200,15 +203,17 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 			ctx, cancel := testContext(t)
 			defer cancel()
 
-			// When CopySourceIfNoneMatch matches the source ETag, the copy should fail.
+			// When CopySourceIfNoneMatch matches the source ETag the copy should
+			// fail. Unlike If-None-Match on GET/HEAD (which returns 304), S3
+			// returns 412 Precondition Failed for all CopyObject conditional
+			// failures regardless of which header triggered them.
 			_, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
 				Bucket:                aws.String(testBucket),
 				Key:                   aws.String(dstKey),
 				CopySource:            aws.String(copySource(testBucket, srcKey)),
 				CopySourceIfNoneMatch: aws.String(srcETag),
 			})
-			// S3 returns 304 Not Modified for matching CopySourceIfNoneMatch.
-			requireNotModified(t, err)
+			requirePreconditionFailed(t, err)
 		})
 
 		t.Run("DifferentETag", func(t *testing.T) {

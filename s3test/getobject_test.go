@@ -127,15 +127,24 @@ func TestGetObjectConditionalReads(t *testing.T) {
 
 			putObject(t, testClient, testBucket, key, "get-me")
 
+			// AWS S3 evaluates If-Modified-Since with a strict greater-than
+			// comparison at 1-second HTTP date granularity. If-Modified-Since
+			// must be in a strictly later second than the object's LastModified
+			// to produce a 304. Using a future timestamp (e.g. +24h) causes
+			// AWS to silently ignore the header and return 200. We therefore
+			// advance past the current second boundary before capturing the
+			// timestamp used as IfModifiedSince.
+			nextSecond := time.Now().Truncate(time.Second).Add(time.Second)
+			time.Sleep(time.Until(nextSecond) + 50*time.Millisecond)
+			afterCreate := time.Now()
+
 			ctx, cancel := testContext(t)
 			defer cancel()
 
-			// Use a timestamp well in the future; object was not modified after this.
-			futureTime := time.Now().Add(24 * time.Hour)
 			_, err := testClient.GetObject(ctx, &s3.GetObjectInput{
 				Bucket:          aws.String(testBucket),
 				Key:             aws.String(key),
-				IfModifiedSince: aws.Time(futureTime),
+				IfModifiedSince: aws.Time(afterCreate),
 			})
 			requireNotModified(t, err)
 		})

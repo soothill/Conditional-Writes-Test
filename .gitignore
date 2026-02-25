@@ -5,7 +5,8 @@
 *.so
 *.dylib
 *.test
-/testfmt
+/s3conditionaltest
+/cmd/s3conditionaltest/s3conditionaltest
 
 # Go build cache
 /vendor/
@@ -30,4 +31,3 @@ Thumbs.db
 
 # Matrix config (user-specific; copy testmatrix.json.example to create your own)
 testmatrix.json
-/testmatrix
