@@ -135,36 +135,88 @@ s3conditionaltest matrix --config=my-matrix.json --timeout=5m --format=json
 
 ## Expected Results
 
-The table below summarises observed behaviour across the four providers in the included config examples. "✓" means the full test group passes; "✗" means at least one sub-test fails.
+Results from a full matrix run on **26 February 2026** (40 tests, 4 providers).
+"✓" means the full sub-group passes; "✗" means at least one sub-test in the group fails;
+the status code in parentheses is the HTTP response that caused the failure (or that was
+returned unexpectedly).
 
-| Test group | AWS S3 | Backblaze B2 | Impossible Cloud | Wasabi |
+| Test group / Sub-group | AWS S3 | Backblaze B2 | Impossible Cloud | Wasabi |
 |---|:---:|:---:|:---:|:---:|
 | **PutObject — IfNoneMatch** | ✓ | ✗ | ✗ | ✗ |
 | **PutObject — IfMatch** | ✓ | ✗ | ✗ | ✗ |
 | **Multipart — IfNoneMatch** | ✓ | ✗ | ✗ | ✗ |
 | **Multipart — IfMatch** | ✓ | ✗ | ✗ | ✗ |
-| **CopyObject destination — IfNoneMatch** | ✓ | ✗ | ✗ | ✗ |
-| **CopyObject destination — IfMatch** | ✓ | ✗ | ✗ | ✗ |
-| **CopyObject source — CopySourceIfMatch** | ✓ | ✓ | ✓ | ✗ |
-| **CopyObject source — CopySourceIfNoneMatch** | ✓ | ✓ | ✓ | ✗ |
-| **GetObject conditional reads** | ✓ | ✓ | ✓ | ✓ |
-| **HeadObject conditional reads** | ✓ | ✓ | ✓ | ✓ |
-| **Edge — concurrent write safety** | ✓ | ✗ | ✗ | ✗ |
-| **Edge — empty body + IfNoneMatch** | ✓ | ✗ | ✗ | ✓ |
-| **Edge — large object + IfNoneMatch** | ✓ | ✗ | ✗ | ✓ |
+| **CopyObject dest — IfNoneMatch** | ✓ | ✗ | ✗ | ✗ |
+| **CopyObject dest — IfMatch** | ✓ | ✗ | ✗ | ✗ |
+| **CopyObject src — CopySourceIfMatch** | ✓ | ✓ | ✓ | ✗ |
+| **CopyObject src — CopySourceIfNoneMatch** | ✓ | ✓ | ✓ | ✗ |
+| **CopyObject src — CopySourceIfModifiedSince** | ✓ | ✓ | ✓ | ✗ |
+| **CopyObject src — CopySourceIfUnmodifiedSince** | ✓ | ✓ | ✓ | ✗ |
+| **GetObject — IfMatch** | ✓ | ✓ | ✓ | ✓ |
+| **GetObject — IfNoneMatch** | ✓ | ✗ | ✗ | ✗ |
+| **GetObject — IfModifiedSince** | ✓ | ✓ | ✓ | ✓ |
+| **GetObject — IfUnmodifiedSince** | ✓ | ✓ | ✓ | ✓ |
+| **HeadObject — IfMatch** | ✓ | ✓ | ✓ | ✓ |
+| **HeadObject — IfNoneMatch** | ✓ | ✗ | ✗ | ✗ |
+| **HeadObject — IfModifiedSince** | ✓ | ✓ | ✓ | ✓ |
+| **HeadObject — IfUnmodifiedSince** | ✓ | ✓ | ✓ | ✓ |
+| **Edge — concurrent IfNoneMatch** | ✓ | ✗ (501) | ✗ (501) | ✗ (200) |
+| **Edge — concurrent IfMatch** | ✓ | ✗ (501) | ✗ (501) | ✗ (200) |
+| **Edge — empty body + IfNoneMatch** | ✓ | ✗ (501) | ✗ (501) | ✓ |
+| **Edge — large object (10 MB)** | ✓ | ✗ | ✗ | ✓ |
 | **Edge — special chars in key** | ✓ | ✗ | ✗ | ✓ |
-| **Edge — ETag round-trip** | ✓ | ✗ | ✗ | ✓ |
-| **Edge — IfNoneMatch + IfMatch rejection** | ✓ (501) | ✓ (501) | ✓ (501) | ✗ (200) |
+| **Edge — ETag round-trip** | ✓ | ✗ (501) | ✗ (501) | ✓ |
+| **Edge — in-progress multipart invisible to IfNoneMatch** | ✓ | ✗ (501) | ✗ (501) | ✓ |
+| **Edge — IfNoneMatch + IfMatch mutual exclusion** | ✓ (501) | ✓ (501) | ✓ (501) | ✗ (200) |
+| **LanceDB — range reads (GetObject Range)** | ✓ | ✓ | ✓ | ✓ |
+| **LanceDB — HeadObject metadata** | ✓ | ✓ | ✓ | ✓ |
+| **LanceDB — unconditional PutObject** | ✓ | ✓ | ✓ | ✓ |
+| **LanceDB — AtomicCreate succeeds on new key** | ✓ | ✗ (501) | ✗ (501) | ✓ |
+| **LanceDB — AtomicCreate rejects existing key** | ✓ (412) | ✗ (501) | ✗ (501) | ✗ (200) |
+| **LanceDB — ConditionalUpdate (If-Match)** | ✓ | ✗ (501) | ✗ (501) | ✓ |
+| **LanceDB — multipart upload** | ✓ | ✓ | ✓ | ✓ |
+| **LanceDB — multipart atomic create** | ✓ (412) | ✗ (200) | ✗ (200) | ✗ (200) |
+| **LanceDB — AbortMultipartUpload** | ✓ | ✓ | ✗ (403) | ✓ |
+| **LanceDB — ListObjectsV2** | ✓ | ✓ | ✓ | ✓ |
+| **LanceDB — DeleteObject** | ✓ | ✓ | ✓ | ✓ |
+| **LanceDB — BulkDeleteObjects** | ✓ | ✓ | ✓ | ✓ |
+| **LanceDB — CopyObject** | ✓ | ✓ | ✓ | ✓ |
+| **LanceDB — manifest commit workflow** | ✓ | ✗ (501) | ✗ (501) | ✗ (200) |
+| **Total (40 tests)** | **40 / 40** | **20 / 40** | **19 / 40** | **22 / 40** |
 
 ### Provider notes
 
-**AWS S3** — Full support for all conditional operations. Returns `412 Precondition Failed` when a write condition fails, `404 NoSuchKey` when `If-Match` is used against a key that does not exist (no ETag to compare), and `501 Not Implemented` when both `If-None-Match` and `If-Match` are sent simultaneously (a logically contradictory combination it has never implemented).
+**AWS S3** — Full support for all 40 tested operations. Returns `412 Precondition Failed`
+when a write condition fails, `404 NoSuchKey` when `If-Match` is used against a key that
+does not exist, and `501 Not Implemented` when both `If-None-Match` and `If-Match` are
+sent simultaneously (a logically contradictory combination it has never implemented).
+The only S3-compatible provider in this test run to pass the full LanceDB compatibility
+suite.
 
-**Backblaze B2** — Conditional reads (`If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since`) work correctly on `GetObject` and `HeadObject`. Conditional writes (`If-None-Match` and `If-Match` on `PutObject`, `CompleteMultipartUpload`, and `CopyObject` destination) are not supported — the headers are silently ignored or rejected with `501 Not Implemented`. `CopySourceIfMatch` and `CopySourceIfNoneMatch` are supported.
+**Backblaze B2** — Conditional writes (`If-None-Match` and `If-Match` on `PutObject`,
+`CompleteMultipartUpload`, and `CopyObject` destination) are not supported — headers are
+rejected with `501 Not Implemented`. `If-None-Match` on `GetObject` and `HeadObject` is
+also broken (304 Not Modified is not returned correctly). `CopySourceIfMatch`,
+`CopySourceIfNoneMatch`, `CopySourceIfModifiedSince`, and `CopySourceIfUnmodifiedSince`
+all work. Basic LanceDB operations (range reads, unconditional puts, multipart, listing,
+deletes, copies) pass; atomic manifest commits fail because they rely on `If-None-Match`
+on `PutObject` or `CompleteMultipartUpload`.
 
-**Impossible Cloud** — Same pattern as Backblaze B2: conditional reads pass; conditional writes on `PutObject`, `Multipart`, and `CopyObject` destination are unsupported (`501`). `CopySourceIfMatch` and `CopySourceIfNoneMatch` are supported.
+**Impossible Cloud** — Same pattern as Backblaze B2 (20/40 failing), with one additional
+failure: `AbortMultipartUpload` returns `403 Forbidden` instead of `204 No Content`,
+which would prevent LanceDB from cleaning up failed uploads. All other results match B2.
 
-**Wasabi** — Conditional reads pass. Conditional writes on `PutObject` and `Multipart` are not enforced (headers are accepted but the operation proceeds regardless). `CopyObject` destination and source conditionals (`If-None-Match`, `If-Match`, `CopySourceIfMatch`, `CopySourceIfNoneMatch`) are not supported. Notably, sending both `If-None-Match=*` and `If-Match` simultaneously returns `200` instead of an error, meaning the contradictory combination is silently ignored.
+**Wasabi** — Conditional writes on `PutObject` and `CompleteMultipartUpload` are not
+enforced (headers accepted but operations proceed regardless, returning `200` instead of
+`412`). All six `CopyObject` conditionals — both destination (`If-None-Match`,
+`If-Match`) and source (`CopySourceIfMatch`, `CopySourceIfNoneMatch`,
+`CopySourceIfModifiedSince`, `CopySourceIfUnmodifiedSince`) — fail. `If-None-Match` on
+`GetObject` and `HeadObject` is also broken. Sending both `If-None-Match=*` and
+`If-Match` simultaneously returns `200` instead of rejecting the contradictory
+combination. LanceDB's atomic `If-None-Match=*` `PutObject` succeeds on a new key but
+fails to reject an overwrite (returns `200` instead of `412`), and
+`CompleteMultipartUpload` with `If-None-Match=*` is not enforced either, making Wasabi
+unsafe for LanceDB's multi-writer commit protocol.
 
 ## `s3conditionaltest` CLI
 
