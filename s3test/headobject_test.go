@@ -119,11 +119,10 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 			ctx, cancel := testContext(t)
 			defer cancel()
 
-			pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 			out, err := testClient.HeadObject(ctx, &s3.HeadObjectInput{
 				Bucket:          aws.String(testBucket),
 				Key:             aws.String(key),
-				IfModifiedSince: aws.Time(pastTime),
+				IfModifiedSince: aws.Time(wellPastTime()),
 			})
 			require.NoError(t, err, "HeadObject with IfModifiedSince in the past should succeed")
 			require.NotNil(t, out.ETag)
@@ -169,11 +168,10 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 			ctx, cancel := testContext(t)
 			defer cancel()
 
-			futureTime := time.Now().Add(24 * time.Hour)
 			out, err := testClient.HeadObject(ctx, &s3.HeadObjectInput{
 				Bucket:            aws.String(testBucket),
 				Key:               aws.String(key),
-				IfUnmodifiedSince: aws.Time(futureTime),
+				IfUnmodifiedSince: aws.Time(wellFutureTime()),
 			})
 			require.NoError(t, err, "HeadObject with IfUnmodifiedSince in the future should succeed")
 			require.NotNil(t, out.ETag)
@@ -188,11 +186,10 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 			ctx, cancel := testContext(t)
 			defer cancel()
 
-			pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 			_, err := testClient.HeadObject(ctx, &s3.HeadObjectInput{
 				Bucket:            aws.String(testBucket),
 				Key:               aws.String(key),
-				IfUnmodifiedSince: aws.Time(pastTime),
+				IfUnmodifiedSince: aws.Time(wellPastTime()),
 			})
 			requirePreconditionFailed(t, err)
 		})

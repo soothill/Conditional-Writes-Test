@@ -9,7 +9,7 @@ INTEGRATION_FLAGS := -tags integration -v -count=1
 # are shown by default. Tests that do NOT match this pattern are still run and
 # still counted in the summary, but their output is suppressed when they pass.
 # If any of them fail they always appear regardless of the filter.
-TESTFMT_FILTER := Conditional|EdgeCases
+TESTFMT_FILTER := Conditional|EdgeCases|LanceDB
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -25,10 +25,10 @@ test-json: ## Run all integration tests and emit results as JSON (requires S3_BU
 	go test $(INTEGRATION_FLAGS) -timeout 10m -json ./s3test/ | go run ./cmd/s3conditionaltest run --format=json --filter '$(TESTFMT_FILTER)'
 
 test-matrix: ## Run tests against all providers in testmatrix.json and print comparison table
-	go run ./cmd/s3conditionaltest matrix
+	go run ./cmd/s3conditionaltest matrix --filter '$(TESTFMT_FILTER)'
 
 test-matrix-json: ## Run tests against all providers and emit comparison as JSON
-	go run ./cmd/s3conditionaltest matrix --format=json
+	go run ./cmd/s3conditionaltest matrix --format=json --filter '$(TESTFMT_FILTER)'
 
 test-verbose: ## Run all integration tests with extra verbose output
 	go test $(INTEGRATION_FLAGS) -timeout 10m -run . ./s3test/

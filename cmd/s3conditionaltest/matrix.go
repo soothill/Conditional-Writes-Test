@@ -255,6 +255,13 @@ func parseTestOutput(r io.Reader, res *matrixRunResult) {
 	for scanner.Scan() {
 		var ev testEvent
 		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+			// Non-JSON lines can appear if the test binary emits unexpected
+			// output (build warnings, runtime panics, etc.). Log them to stderr
+			// so they are visible without silently swallowing diagnostic data.
+			if line := strings.TrimSpace(scanner.Text()); line != "" {
+				fmt.Fprintf(os.Stderr, "warning: non-JSON output from %s: %s\n",
+					res.providerName, line)
+			}
 			continue
 		}
 		if ev.Test == "" {

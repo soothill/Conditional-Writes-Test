@@ -6,6 +6,8 @@
 *.dylib
 *.test
 /s3conditionaltest
+/testfmt
+/testmatrix
 /cmd/s3conditionaltest/s3conditionaltest
 
 # Go build cache

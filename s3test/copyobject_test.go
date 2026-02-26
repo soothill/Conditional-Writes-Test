@@ -251,14 +251,12 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 			ctx, cancel := testContext(t)
 			defer cancel()
 
-			// Source was created (modified) well after 2020-01-01, so the copy
-			// should proceed because the source has been modified since then.
-			pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+			// Source was modified well after wellPastTime(), so the copy proceeds.
 			out, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
 				Bucket:                   aws.String(testBucket),
 				Key:                      aws.String(dstKey),
 				CopySource:               aws.String(copySource(testBucket, srcKey)),
-				CopySourceIfModifiedSince: aws.Time(pastTime),
+				CopySourceIfModifiedSince: aws.Time(wellPastTime()),
 			})
 			require.NoError(t, err, "CopyObject with CopySourceIfModifiedSince in the past should succeed")
 			require.NotNil(t, out.CopyObjectResult)
@@ -306,14 +304,12 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 			ctx, cancel := testContext(t)
 			defer cancel()
 
-			// Use a timestamp in the future: the source has not been modified
-			// since then, so the copy condition is satisfied.
-			futureTime := time.Now().Add(24 * time.Hour)
+			// Source has not been modified since wellFutureTime(), so the copy proceeds.
 			out, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
 				Bucket:                     aws.String(testBucket),
 				Key:                        aws.String(dstKey),
 				CopySource:                 aws.String(copySource(testBucket, srcKey)),
-				CopySourceIfUnmodifiedSince: aws.Time(futureTime),
+				CopySourceIfUnmodifiedSince: aws.Time(wellFutureTime()),
 			})
 			require.NoError(t, err, "CopyObject with CopySourceIfUnmodifiedSince in the future should succeed")
 			require.NotNil(t, out.CopyObjectResult)
@@ -330,14 +326,12 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 			ctx, cancel := testContext(t)
 			defer cancel()
 
-			// Source was created (modified) well after 2020-01-01, so it has
-			// been modified since that time → copy condition is not satisfied.
-			pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+			// Source was modified after wellPastTime(), so the unmodified condition fails.
 			_, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
 				Bucket:                     aws.String(testBucket),
 				Key:                        aws.String(dstKey),
 				CopySource:                 aws.String(copySource(testBucket, srcKey)),
-				CopySourceIfUnmodifiedSince: aws.Time(pastTime),
+				CopySourceIfUnmodifiedSince: aws.Time(wellPastTime()),
 			})
 			requirePreconditionFailed(t, err)
 		})

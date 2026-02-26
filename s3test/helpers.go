@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"testing"
@@ -41,11 +42,27 @@ func testContext(t testing.TB) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, 30*time.Second)
 }
 
-// uniqueKey generates a unique S3 key using the test name and a nanosecond
-// timestamp to avoid collisions across parallel or repeated runs.
+// uniqueKey generates a unique S3 key using the test name, a nanosecond
+// timestamp, and a random suffix to avoid collisions across parallel or
+// repeated runs (two goroutines on the same fast CPU can share a nanosecond).
 func uniqueKey(t testing.TB, prefix string) string {
 	t.Helper()
-	return fmt.Sprintf("test/%s/%s/%d", prefix, t.Name(), time.Now().UnixNano())
+	return fmt.Sprintf("test/%s/%s/%d-%x", prefix, t.Name(), time.Now().UnixNano(), rand.Int64())
+}
+
+// wellPastTime returns a fixed timestamp well in the past (2020-01-01 UTC)
+// used by conditional-read tests that need an IfModifiedSince or
+// CopySourceIfModifiedSince value the object was certainly modified after.
+func wellPastTime() time.Time {
+	return time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+}
+
+// wellFutureTime returns a timestamp 24 hours in the future, used by
+// conditional-read tests that need an IfUnmodifiedSince or
+// CopySourceIfUnmodifiedSince value the object has certainly not been modified
+// after (i.e. it is still "unmodified" relative to that future date).
+func wellFutureTime() time.Time {
+	return time.Now().Add(24 * time.Hour)
 }
 
 // copySource formats the CopySource field required by CopyObject as "bucket/key".
@@ -245,12 +262,19 @@ func doMultipartUpload(
 	t.Cleanup(func() {
 		abortCtx, abortCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer abortCancel()
-		//nolint:errcheck // Best-effort abort; may fail if the upload already completed.
-		client.AbortMultipartUpload(abortCtx, &s3.AbortMultipartUploadInput{
+		_, abortErr := client.AbortMultipartUpload(abortCtx, &s3.AbortMultipartUploadInput{
 			Bucket:   aws.String(bucket),
 			Key:      aws.String(key),
 			UploadId: uploadID,
 		})
+		if abortErr != nil {
+			// 404 means the upload was already completed or aborted — benign.
+			var respErr *awshttp.ResponseError
+			if errors.As(abortErr, &respErr) && respErr.HTTPStatusCode() == 404 {
+				return
+			}
+			t.Logf("cleanup: abort multipart upload for key %s: %v", key, abortErr)
+		}
 	})
 
 	// Step 2: Upload a single part.

@@ -6,7 +6,7 @@ Conditional writes — using `If-None-Match` and `If-Match` on `PutObject`, `Com
 
 ## Prerequisites
 
-- Go 1.24+
+- Go 1.24.5+
 - An S3 bucket with write access
 - [golangci-lint](https://golangci-lint.run/) v2 (for linting only)
 
@@ -215,16 +215,17 @@ s3conditionaltest matrix --format=json
 
 ## Test Coverage
 
-**85 subtests** across 6 test files:
+**68 subtests** across 7 test files:
 
 | File | Test Function | Subtests | Description |
 |---|---|---|---|
 | `putobject_test.go` | `TestPutObjectConditionalWrites` | 8 | `If-None-Match` and `If-Match` on `PutObject` |
 | `multipart_test.go` | `TestMultipartConditionalWrites` | 6 | `If-None-Match` and `If-Match` on `CompleteMultipartUpload` |
-| `copyobject_test.go` | `TestCopyObjectConditionalWrites` | 10 | Destination and source conditionals on `CopyObject` |
-| `getobject_test.go` | `TestGetObjectConditionalReads` | 8 | `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` |
-| `headobject_test.go` | `TestHeadObjectConditionalReads` | 8 | Same conditionals as `GetObject` |
-| `edge_test.go` | `TestEdgeCases` | 7 | Concurrency, empty body, large objects, special chars, ETag round-trip |
+| `copyobject_test.go` | `TestCopyObjectConditionalWrites` | 14 | Destination and source conditionals on `CopyObject` |
+| `getobject_test.go` | `TestGetObjectConditionalReads` | 9 | `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` |
+| `headobject_test.go` | `TestHeadObjectConditionalReads` | 9 | Same conditionals as `GetObject` |
+| `edge_test.go` | `TestEdgeCases` | 8 | Concurrency, empty body, large objects, special chars, ETag round-trip, in-progress multipart |
+| `lancedb_test.go` | `TestLanceDBCompatibility` | 14 | LanceDB-required S3 operations (range reads, atomic creates, multipart, bulk delete, etc.) |
 
 ### Sub-test breakdown
 
@@ -259,7 +260,7 @@ s3conditionaltest matrix --format=json
 </details>
 
 <details>
-<summary>CopyObject conditional writes (10 sub-tests)</summary>
+<summary>CopyObject conditional writes (14 sub-tests)</summary>
 
 | Sub-test | What it verifies |
 |---|---|
@@ -273,11 +274,15 @@ s3conditionaltest matrix --format=json
 | `CopySourceIfMatch/WrongETag` | Returns 412 when source ETag does not match |
 | `CopySourceIfNoneMatch/MatchingETag` | Returns 412 when source ETag matches (condition inverted) |
 | `CopySourceIfNoneMatch/DifferentETag` | Copy proceeds when source ETag differs |
+| `CopySourceIfModifiedSince/Modified` | Copy proceeds when source was modified after the given date |
+| `CopySourceIfModifiedSince/NotModified` | Returns 412 when source has not been modified since the given date |
+| `CopySourceIfUnmodifiedSince/Unmodified` | Copy proceeds when source has not been modified since the given date |
+| `CopySourceIfUnmodifiedSince/Modified` | Returns 412 when source was modified after the given date |
 
 </details>
 
 <details>
-<summary>GetObject / HeadObject conditional reads (8 sub-tests each)</summary>
+<summary>GetObject / HeadObject conditional reads (9 sub-tests each)</summary>
 
 | Sub-test | What it verifies |
 |---|---|
@@ -285,6 +290,7 @@ s3conditionaltest matrix --format=json
 | `IfMatch/WrongETag` | Returns 412 when ETag does not match |
 | `IfNoneMatch/MatchingETag` | Returns 304 Not Modified when ETag matches |
 | `IfNoneMatch/DifferentETag` | Returns 200 with body when ETag differs |
+| `IfNoneMatch/Wildcard` | Returns 304 Not Modified when `If-None-Match: *` and any object exists (RFC 7232 wildcard) |
 | `IfModifiedSince/Modified` | Returns 200 when object was modified after the given date |
 | `IfModifiedSince/NotModified` | Returns 304 when object has not changed since the given date |
 | `IfUnmodifiedSince/Unmodified` | Returns 200 when object has not changed since the given date |
@@ -293,17 +299,42 @@ s3conditionaltest matrix --format=json
 </details>
 
 <details>
-<summary>Edge cases (7 sub-tests)</summary>
+<summary>Edge cases (8 sub-tests)</summary>
 
 | Sub-test | What it verifies |
 |---|---|
-| `ConcurrentIfNoneMatch` | Exactly one of N concurrent `IfNoneMatch=*` writes succeeds; the rest return 412 or 409 |
-| `ConcurrentIfMatch` | Exactly one of N concurrent `IfMatch` writes succeeds; the rest return 412 or 409 |
+| `ConcurrentIfNoneMatch` | Exactly one of N concurrent `IfNoneMatch=*` writes succeeds; the rest return 412 or 409; winner's data is durably stored |
+| `ConcurrentIfMatch` | Exactly one of N concurrent `IfMatch` writes succeeds; the rest return 412 or 409; winner's data is durably stored |
 | `EmptyBody` | `IfNoneMatch=*` works correctly with a zero-byte body |
 | `LargeObject` | `IfNoneMatch=*` then `IfMatch` work correctly with a 10 MB body |
 | `SpecialCharsInKey` | `IfNoneMatch=*` works with spaces, Unicode, deep paths, `+`, and `&` in keys |
 | `ETagRoundTrip` | ETag from `PutObject` can be used with `HeadObject` and then `PutObject IfMatch` and `GetObject IfMatch` |
+| `InProgressMultipartInvisibleToIfNoneMatch` | `PutObject If-None-Match=*` succeeds while a multipart upload for the same key is in progress (in-progress uploads are invisible to conditional write evaluation) |
 | `IfNoneMatchAndIfMatchMutualExclusion` | Sending both `If-None-Match=*` and `If-Match` simultaneously is rejected (one condition must always fail) |
+
+</details>
+
+<details>
+<summary>LanceDB compatibility (14 sub-tests)</summary>
+
+Verifies the S3 operations required by [LanceDB](https://lancedb.github.io/lancedb/), which uses Apache Arrow's `object_store` crate and relies on `If-None-Match: *` for atomic multi-writer manifest commits.
+
+| Sub-test | What it verifies |
+|---|---|
+| `RangeRead` | Byte-range `GetObject` (Range header) returns the correct slice of object data |
+| `HeadObject` | `HeadObject` returns correct `ContentLength` and `ETag` metadata |
+| `PutObject` | Unconditional `PutObject` stores an object and returns an ETag |
+| `AtomicCreate_SucceedsOnNewKey` | `PutObject If-None-Match=*` succeeds when the key does not exist |
+| `AtomicCreate_FailsOnExistingKey` | `PutObject If-None-Match=*` returns 412 or 409 when the key already exists |
+| `ConditionalUpdate` | `PutObject If-Match=<etag>` updates the object when the ETag matches and returns a new ETag |
+| `MultipartWrite` | Full multipart upload (create → upload part → complete) succeeds and the body round-trips |
+| `MultipartAtomicCreate` | `CompleteMultipartUpload If-None-Match=*` succeeds on a new key |
+| `AbortMultipartUpload` | `AbortMultipartUpload` removes an in-progress upload without error |
+| `ListObjectsV2` | Prefix listing with pagination (`MaxKeys=1` + `ContinuationToken`) returns all objects |
+| `DeleteObject` | `DeleteObject` removes an object; subsequent `HeadObject` returns 404 |
+| `BulkDeleteObjects` | `DeleteObjects` removes multiple objects in a single API call |
+| `CopyObject` | `CopyObject` copies an object to a new key and returns a matching ETag |
+| `ManifestCommitWorkflow` | End-to-end simulation of LanceDB's write workflow: PutObject data, atomic manifest commit, conditional update, and verify final state |
 
 </details>
 
@@ -349,6 +380,7 @@ s3test/
   getobject_test.go     GetObject conditional read tests
   headobject_test.go    HeadObject conditional read tests
   edge_test.go          Edge case and concurrency tests
+  lancedb_test.go       LanceDB S3 compatibility tests
 
 cmd/s3conditionaltest/
   main.go               Package doc, shared types/helpers, ANSI helpers, main()

@@ -126,12 +126,11 @@ func TestGetObjectConditionalReads(t *testing.T) {
 			ctx, cancel := testContext(t)
 			defer cancel()
 
-			// Use a timestamp well in the past; object was modified after this time.
-			pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+			// Object was modified well after wellPastTime(), so the condition passes.
 			out, err := testClient.GetObject(ctx, &s3.GetObjectInput{
 				Bucket:          aws.String(testBucket),
 				Key:             aws.String(key),
-				IfModifiedSince: aws.Time(pastTime),
+				IfModifiedSince: aws.Time(wellPastTime()),
 			})
 			require.NoError(t, err, "GetObject with IfModifiedSince in the past should succeed")
 			defer out.Body.Close()
@@ -180,12 +179,11 @@ func TestGetObjectConditionalReads(t *testing.T) {
 			ctx, cancel := testContext(t)
 			defer cancel()
 
-			// Use a timestamp in the future; object has not been modified since then.
-			futureTime := time.Now().Add(24 * time.Hour)
+			// Object has not been modified since wellFutureTime(), so the condition passes.
 			out, err := testClient.GetObject(ctx, &s3.GetObjectInput{
 				Bucket:            aws.String(testBucket),
 				Key:               aws.String(key),
-				IfUnmodifiedSince: aws.Time(futureTime),
+				IfUnmodifiedSince: aws.Time(wellFutureTime()),
 			})
 			require.NoError(t, err, "GetObject with IfUnmodifiedSince in the future should succeed")
 			defer out.Body.Close()
@@ -204,12 +202,11 @@ func TestGetObjectConditionalReads(t *testing.T) {
 			ctx, cancel := testContext(t)
 			defer cancel()
 
-			// Use a timestamp well in the past; object was modified after this.
-			pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+			// Object was modified after wellPastTime(), so the unmodified condition fails.
 			_, err := testClient.GetObject(ctx, &s3.GetObjectInput{
 				Bucket:            aws.String(testBucket),
 				Key:               aws.String(key),
-				IfUnmodifiedSince: aws.Time(pastTime),
+				IfUnmodifiedSince: aws.Time(wellPastTime()),
 			})
 			requirePreconditionFailed(t, err)
 		})

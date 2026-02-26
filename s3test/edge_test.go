@@ -21,8 +21,13 @@ func TestEdgeCases(t *testing.T) {
 		key := uniqueKey(t, "concurrent-ifnonematch")
 		cleanupKey(t, testClient, testBucket, key)
 
+		// baseCtx is derived from testContext(t) so that the s3responseLogger
+		// middleware can attribute concurrent-goroutine responses to this test.
+		baseCtx, baseCancel := testContext(t)
+		defer baseCancel()
+
 		errs := runConcurrent(concurrentWorkers, func(id int) error {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(baseCtx, 30*time.Second)
 			defer cancel()
 			_, err := testClient.PutObject(ctx, &s3.PutObjectInput{
 				Bucket:      aws.String(testBucket),
@@ -72,8 +77,13 @@ func TestEdgeCases(t *testing.T) {
 		// Create initial object and capture its ETag.
 		etag := putObject(t, testClient, testBucket, key, "initial")
 
+		// baseCtx is derived from testContext(t) so that the s3responseLogger
+		// middleware can attribute concurrent-goroutine responses to this test.
+		baseCtx, baseCancel := testContext(t)
+		defer baseCancel()
+
 		errs := runConcurrent(concurrentWorkers, func(id int) error {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(baseCtx, 30*time.Second)
 			defer cancel()
 			_, err := testClient.PutObject(ctx, &s3.PutObjectInput{
 				Bucket:  aws.String(testBucket),
