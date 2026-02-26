@@ -1,6 +1,8 @@
 # Conditional-Writes-Test
 
-Go integration test suite for validating AWS S3 conditional write and conditional read operations. Tests can run against AWS S3 or any S3-compatible endpoint (MinIO, LocalStack, Ceph).
+Go integration test suite for validating AWS S3 conditional write and conditional read operations across multiple S3-compatible storage providers. Tests run against AWS S3 or any S3-compatible endpoint (Wasabi, Backblaze B2, Impossible Cloud, MinIO, LocalStack, Ceph, etc.).
+
+Conditional writes — using `If-None-Match` and `If-Match` on `PutObject`, `CompleteMultipartUpload`, and `CopyObject` — were added to AWS S3 in August 2024. This suite verifies whether an endpoint implements them correctly, and whether existing conditional read operations behave as specified.
 
 ## Prerequisites
 
@@ -33,14 +35,16 @@ The config file is found automatically (first match wins):
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `S3_BUCKET` | **Yes** | - | Bucket name for tests |
-| `S3_ENDPOINT` | No | AWS default | Custom endpoint (MinIO, LocalStack) |
+| `S3_BUCKET` | **Yes** | — | Bucket name for tests |
+| `S3_ENDPOINT` | No | AWS default | Custom endpoint URL (leave empty for real AWS S3) |
 | `AWS_REGION` | No | `us-east-1` | AWS region |
 | `AWS_ACCESS_KEY_ID` | No | SDK default chain | Access key |
 | `AWS_SECRET_ACCESS_KEY` | No | SDK default chain | Secret key |
-| `AWS_SESSION_TOKEN` | No | - | Session token |
+| `AWS_SESSION_TOKEN` | No | — | Session token (STS / assume-role / SSO) |
 | `S3_PATH_STYLE` | No | `true` if endpoint set | Force path-style addressing |
 | `S3_CONFIG_FILE` | No | `.env` (auto-found) | Path to a custom config file |
+
+> **AWS S3 note:** Leave `S3_ENDPOINT` empty and set `S3_PATH_STYLE=false`. The SDK routes requests to the correct regional endpoint automatically.
 
 ## Running Tests
 
@@ -102,15 +106,13 @@ make test
 
 ## Multi-Provider Testing
 
-`s3conditionaltest matrix` runs the full test suite against every provider
-listed in `testmatrix.json` in parallel and prints a side-by-side comparison
-table showing which tests pass or fail on each provider.
+`s3conditionaltest matrix` runs the full test suite against every provider listed in `testmatrix.json` in parallel and prints a side-by-side comparison table showing which tests pass or fail on each provider.
 
 ### Setup
 
 ```bash
 cp testmatrix.json.example testmatrix.json
-# edit testmatrix.json — add a [[providers]] entry for each endpoint
+# edit testmatrix.json — add a "providers" entry for each endpoint
 # create one .env.* file per provider with its credentials
 ```
 
@@ -130,6 +132,39 @@ Or directly:
 s3conditionaltest matrix
 s3conditionaltest matrix --config=my-matrix.json --timeout=5m --format=json
 ```
+
+## Expected Results
+
+The table below summarises observed behaviour across the four providers in the included config examples. "✓" means the full test group passes; "✗" means at least one sub-test fails.
+
+| Test group | AWS S3 | Backblaze B2 | Impossible Cloud | Wasabi |
+|---|:---:|:---:|:---:|:---:|
+| **PutObject — IfNoneMatch** | ✓ | ✗ | ✗ | ✗ |
+| **PutObject — IfMatch** | ✓ | ✗ | ✗ | ✗ |
+| **Multipart — IfNoneMatch** | ✓ | ✗ | ✗ | ✗ |
+| **Multipart — IfMatch** | ✓ | ✗ | ✗ | ✗ |
+| **CopyObject destination — IfNoneMatch** | ✓ | ✗ | ✗ | ✗ |
+| **CopyObject destination — IfMatch** | ✓ | ✗ | ✗ | ✗ |
+| **CopyObject source — CopySourceIfMatch** | ✓ | ✓ | ✓ | ✗ |
+| **CopyObject source — CopySourceIfNoneMatch** | ✓ | ✓ | ✓ | ✗ |
+| **GetObject conditional reads** | ✓ | ✓ | ✓ | ✓ |
+| **HeadObject conditional reads** | ✓ | ✓ | ✓ | ✓ |
+| **Edge — concurrent write safety** | ✓ | ✗ | ✗ | ✗ |
+| **Edge — empty body + IfNoneMatch** | ✓ | ✗ | ✗ | ✓ |
+| **Edge — large object + IfNoneMatch** | ✓ | ✗ | ✗ | ✓ |
+| **Edge — special chars in key** | ✓ | ✗ | ✗ | ✓ |
+| **Edge — ETag round-trip** | ✓ | ✗ | ✗ | ✓ |
+| **Edge — IfNoneMatch + IfMatch rejection** | ✓ (501) | ✓ (501) | ✓ (501) | ✗ (200) |
+
+### Provider notes
+
+**AWS S3** — Full support for all conditional operations. Returns `412 Precondition Failed` when a write condition fails, `404 NoSuchKey` when `If-Match` is used against a key that does not exist (no ETag to compare), and `501 Not Implemented` when both `If-None-Match` and `If-Match` are sent simultaneously (a logically contradictory combination it has never implemented).
+
+**Backblaze B2** — Conditional reads (`If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since`) work correctly on `GetObject` and `HeadObject`. Conditional writes (`If-None-Match` and `If-Match` on `PutObject`, `CompleteMultipartUpload`, and `CopyObject` destination) are not supported — the headers are silently ignored or rejected with `501 Not Implemented`. `CopySourceIfMatch` and `CopySourceIfNoneMatch` are supported.
+
+**Impossible Cloud** — Same pattern as Backblaze B2: conditional reads pass; conditional writes on `PutObject`, `Multipart`, and `CopyObject` destination are unsupported (`501`). `CopySourceIfMatch` and `CopySourceIfNoneMatch` are supported.
+
+**Wasabi** — Conditional reads pass. Conditional writes on `PutObject` and `Multipart` are not enforced (headers are accepted but the operation proceeds regardless). `CopyObject` destination and source conditionals (`If-None-Match`, `If-Match`, `CopySourceIfMatch`, `CopySourceIfNoneMatch`) are not supported. Notably, sending both `If-None-Match=*` and `If-Match` simultaneously returns `200` instead of an error, meaning the contradictory combination is silently ignored.
 
 ## `s3conditionaltest` CLI
 
@@ -180,16 +215,97 @@ s3conditionaltest matrix --format=json
 
 ## Test Coverage
 
-**47 subtests** across 6 test files:
+**85 subtests** across 6 test files:
 
 | File | Test Function | Subtests | Description |
 |---|---|---|---|
-| `putobject_test.go` | `TestPutObjectConditionalWrites` | 8 | If-None-Match and If-Match on PutObject |
-| `multipart_test.go` | `TestMultipartConditionalWrites` | 6 | If-None-Match and If-Match on CompleteMultipartUpload |
-| `copyobject_test.go` | `TestCopyObjectConditionalWrites` | 10 | Destination and source conditionals on CopyObject |
-| `getobject_test.go` | `TestGetObjectConditionalReads` | 8 | If-Match, If-None-Match, If-Modified-Since, If-Unmodified-Since |
-| `headobject_test.go` | `TestHeadObjectConditionalReads` | 8 | Same conditionals as GetObject |
+| `putobject_test.go` | `TestPutObjectConditionalWrites` | 8 | `If-None-Match` and `If-Match` on `PutObject` |
+| `multipart_test.go` | `TestMultipartConditionalWrites` | 6 | `If-None-Match` and `If-Match` on `CompleteMultipartUpload` |
+| `copyobject_test.go` | `TestCopyObjectConditionalWrites` | 10 | Destination and source conditionals on `CopyObject` |
+| `getobject_test.go` | `TestGetObjectConditionalReads` | 8 | `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` |
+| `headobject_test.go` | `TestHeadObjectConditionalReads` | 8 | Same conditionals as `GetObject` |
 | `edge_test.go` | `TestEdgeCases` | 7 | Concurrency, empty body, large objects, special chars, ETag round-trip |
+
+### Sub-test breakdown
+
+<details>
+<summary>PutObject conditional writes (8 sub-tests)</summary>
+
+| Sub-test | What it verifies |
+|---|---|
+| `IfNoneMatch/NewKey` | `IfNoneMatch=*` succeeds when the key does not exist |
+| `IfNoneMatch/ExistingKey` | `IfNoneMatch=*` returns 412 when the key already exists |
+| `IfNoneMatch/AfterDelete` | `IfNoneMatch=*` succeeds after the key has been deleted |
+| `IfMatch/CorrectETag` | `IfMatch=<etag>` succeeds when the ETag matches |
+| `IfMatch/WrongETag` | `IfMatch=<wrong-etag>` returns 412 |
+| `IfMatch/NonExistentKey` | `IfMatch` on a missing key returns 404 (AWS) or 412 (others) |
+| `IfMatch/StaleETag` | `IfMatch` with a superseded ETag returns 412 |
+| `IfMatch/ChainedUpdates` | Three sequential IfMatch updates each succeed and produce distinct ETags |
+
+</details>
+
+<details>
+<summary>Multipart conditional writes (6 sub-tests)</summary>
+
+| Sub-test | What it verifies |
+|---|---|
+| `IfNoneMatch/NewKey` | `CompleteMultipartUpload` with `IfNoneMatch=*` on a new key succeeds |
+| `IfNoneMatch/ExistingKey` | Returns 412 when the destination key already exists |
+| `IfNoneMatch/AfterDelete` | Succeeds after the key has been deleted |
+| `IfMatch/CorrectETag` | `CompleteMultipartUpload` with correct `IfMatch` ETag succeeds |
+| `IfMatch/WrongETag` | Returns 412 with a wrong ETag |
+| `IfMatch/NonExistentKey` | Returns 404 or 412 on a missing key |
+
+</details>
+
+<details>
+<summary>CopyObject conditional writes (10 sub-tests)</summary>
+
+| Sub-test | What it verifies |
+|---|---|
+| `IfNoneMatch/NewDestination` | `IfNoneMatch=*` on destination succeeds when destination does not exist |
+| `IfNoneMatch/ExistingDestination` | Returns 412 when destination already exists |
+| `IfNoneMatch/AfterDelete` | Succeeds after destination has been deleted |
+| `IfMatch/CorrectETag` | `IfMatch` on destination succeeds with correct ETag |
+| `IfMatch/WrongETag` | Returns 412 on destination with wrong ETag |
+| `IfMatch/NonExistentDestination` | Returns 404 or 412 when destination does not exist |
+| `CopySourceIfMatch/CorrectETag` | Copy proceeds when source ETag matches |
+| `CopySourceIfMatch/WrongETag` | Returns 412 when source ETag does not match |
+| `CopySourceIfNoneMatch/MatchingETag` | Returns 412 when source ETag matches (condition inverted) |
+| `CopySourceIfNoneMatch/DifferentETag` | Copy proceeds when source ETag differs |
+
+</details>
+
+<details>
+<summary>GetObject / HeadObject conditional reads (8 sub-tests each)</summary>
+
+| Sub-test | What it verifies |
+|---|---|
+| `IfMatch/CorrectETag` | Returns 200 with body when ETag matches |
+| `IfMatch/WrongETag` | Returns 412 when ETag does not match |
+| `IfNoneMatch/MatchingETag` | Returns 304 Not Modified when ETag matches |
+| `IfNoneMatch/DifferentETag` | Returns 200 with body when ETag differs |
+| `IfModifiedSince/Modified` | Returns 200 when object was modified after the given date |
+| `IfModifiedSince/NotModified` | Returns 304 when object has not changed since the given date |
+| `IfUnmodifiedSince/Unmodified` | Returns 200 when object has not changed since the given date |
+| `IfUnmodifiedSince/Modified` | Returns 412 when object was modified after the given date |
+
+</details>
+
+<details>
+<summary>Edge cases (7 sub-tests)</summary>
+
+| Sub-test | What it verifies |
+|---|---|
+| `ConcurrentIfNoneMatch` | Exactly one of N concurrent `IfNoneMatch=*` writes succeeds; the rest return 412 or 409 |
+| `ConcurrentIfMatch` | Exactly one of N concurrent `IfMatch` writes succeeds; the rest return 412 or 409 |
+| `EmptyBody` | `IfNoneMatch=*` works correctly with a zero-byte body |
+| `LargeObject` | `IfNoneMatch=*` then `IfMatch` work correctly with a 10 MB body |
+| `SpecialCharsInKey` | `IfNoneMatch=*` works with spaces, Unicode, deep paths, `+`, and `&` in keys |
+| `ETagRoundTrip` | ETag from `PutObject` can be used with `HeadObject` and then `PutObject IfMatch` and `GetObject IfMatch` |
+| `IfNoneMatchAndIfMatchMutualExclusion` | Sending both `If-None-Match=*` and `If-Match` simultaneously is rejected (one condition must always fail) |
+
+</details>
 
 ## Makefile Targets
 
@@ -235,8 +351,14 @@ s3test/
   edge_test.go          Edge case and concurrency tests
 
 cmd/s3conditionaltest/
-  main.go               Unified CLI: `run` (format test output) and `matrix` (multi-provider)
+  main.go               Package doc, shared types/helpers, ANSI helpers, main()
+  run.go                `run` subcommand — formats go test -json output
+  matrix.go             `matrix` subcommand — multi-provider comparison table
 
 .env.example            Template config file (committed)
+.env.aws                AWS S3 provider config example
+.env.wasabi             Wasabi provider config example
+.env.backblaze          Backblaze B2 provider config example
+.env.impossible         Impossible Cloud provider config example
 testmatrix.json.example Template matrix config (committed; copy to testmatrix.json)
 ```

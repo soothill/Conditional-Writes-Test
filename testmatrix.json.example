@@ -1,20 +1,24 @@
 {
-  "_comment": "Copy this file to testmatrix.json and fill in your provider details.",
+  "_comment": "Copy this file to testmatrix.json and fill in your provider details. The _comment field is ignored by the parser — it is a documentation-only convention.",
 
-  "filter": "Conditional|EdgeCases",
+  "filter": "",
 
   "providers": [
     {
-      "name": "MinIO",
-      "config": ".env.minio"
-    },
-    {
-      "name": "LocalStack",
-      "config": ".env.localstack"
-    },
-    {
       "name": "AWS S3",
       "config": ".env.aws"
+    },
+    {
+      "name": "Wasabi",
+      "config": ".env.wasabi"
+    },
+    {
+      "name": "Backblaze B2",
+      "config": ".env.backblaze"
+    },
+    {
+      "name": "Impossible Cloud",
+      "config": ".env.impossible"
     }
   ]
 }

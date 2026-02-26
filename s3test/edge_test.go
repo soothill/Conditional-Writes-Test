@@ -229,8 +229,9 @@ func TestEdgeCases(t *testing.T) {
 		// Setting both IfNoneMatch=* and IfMatch simultaneously is logically
 		// contradictory: IfNoneMatch requires the key to NOT exist while IfMatch
 		// requires the key to exist with a specific ETag. At least one condition
-		// must fail, so S3 always returns an error (412 from whichever condition
-		// it evaluates first, or 400 if it detects the invalid combination).
+		// must always fail. AWS S3 returns 501 Not Implemented for this
+		// combination because it never implemented handling for both headers
+		// together — other implementations may return 400 Bad Request or 412.
 		_, err := testClient.PutObject(ctx, &s3.PutObjectInput{
 			Bucket:      aws.String(testBucket),
 			Key:         aws.String(key),
