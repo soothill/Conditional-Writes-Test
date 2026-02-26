@@ -18,8 +18,7 @@ import (
 
 func TestEdgeCases(t *testing.T) {
 	t.Run("ConcurrentIfNoneMatch", func(t *testing.T) {
-		key := uniqueKey(t, "concurrent-ifnonematch")
-		cleanupKey(t, testClient, testBucket, key)
+		key := setupKey(t, "concurrent-ifnonematch")
 
 		// baseCtx is derived from testContext(t) so that the s3responseLogger
 		// middleware can attribute concurrent-goroutine responses to this test.
@@ -71,11 +70,7 @@ func TestEdgeCases(t *testing.T) {
 	})
 
 	t.Run("ConcurrentIfMatch", func(t *testing.T) {
-		key := uniqueKey(t, "concurrent-ifmatch")
-		cleanupKey(t, testClient, testBucket, key)
-
-		// Create initial object and capture its ETag.
-		etag := putObject(t, testClient, testBucket, key, "initial")
+		key, etag := putKeyForTest(t, "concurrent-ifmatch", "initial")
 
 		// baseCtx is derived from testContext(t) so that the s3responseLogger
 		// middleware can attribute concurrent-goroutine responses to this test.
@@ -126,8 +121,7 @@ func TestEdgeCases(t *testing.T) {
 	})
 
 	t.Run("EmptyBody", func(t *testing.T) {
-		key := uniqueKey(t, "empty-body")
-		cleanupKey(t, testClient, testBucket, key)
+		key := setupKey(t, "empty-body")
 
 		ctx, cancel := testContext(t)
 		defer cancel()
@@ -144,8 +138,7 @@ func TestEdgeCases(t *testing.T) {
 	})
 
 	t.Run("LargeObject", func(t *testing.T) {
-		key := uniqueKey(t, "large-object")
-		cleanupKey(t, testClient, testBucket, key)
+		key := setupKey(t, "large-object")
 
 		// Create a 10 MB body.
 		largeBody := strings.Repeat("A", 10*1024*1024)
@@ -188,8 +181,7 @@ func TestEdgeCases(t *testing.T) {
 
 		for _, tc := range keys {
 			t.Run(tc.name, func(t *testing.T) {
-				fullKey := uniqueKey(t, tc.key)
-				cleanupKey(t, testClient, testBucket, fullKey)
+				fullKey := setupKey(t, tc.key)
 
 				ctx, cancel := testContext(t)
 				defer cancel()
@@ -207,8 +199,7 @@ func TestEdgeCases(t *testing.T) {
 	})
 
 	t.Run("ETagRoundTrip", func(t *testing.T) {
-		key := uniqueKey(t, "etag-roundtrip")
-		cleanupKey(t, testClient, testBucket, key)
+		key := setupKey(t, "etag-roundtrip")
 
 		ctx, cancel := testContext(t)
 		defer cancel()
@@ -257,8 +248,7 @@ func TestEdgeCases(t *testing.T) {
 	})
 
 	t.Run("InProgressMultipartInvisibleToIfNoneMatch", func(t *testing.T) {
-		key := uniqueKey(t, "mpu-invisible")
-		cleanupKey(t, testClient, testBucket, key)
+		key := setupKey(t, "mpu-invisible")
 
 		ctx, cancel := testContext(t)
 		defer cancel()
@@ -300,10 +290,7 @@ func TestEdgeCases(t *testing.T) {
 	})
 
 	t.Run("IfNoneMatchAndIfMatchMutualExclusion", func(t *testing.T) {
-		key := uniqueKey(t, "mutual-exclusion")
-		cleanupKey(t, testClient, testBucket, key)
-
-		etag := putObject(t, testClient, testBucket, key, "original")
+		key, etag := putKeyForTest(t, "mutual-exclusion", "original")
 
 		ctx, cancel := testContext(t)
 		defer cancel()

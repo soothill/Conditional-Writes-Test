@@ -21,6 +21,16 @@ import (
 	"unicode/utf8"
 )
 
+// ── Shared constants ───────────────────────────────────────────────────────────
+
+// scannerBufSize is the read-buffer size for go test -json scanners.
+// 1 MiB comfortably handles long output lines from verbose test failures.
+const scannerBufSize = 1 << 20
+
+// maxFailureMsgLen is the maximum visible-character width of a one-line
+// failure message shown beneath each failing sub-test.
+const maxFailureMsgLen = 90
+
 // ── Shared types ───────────────────────────────────────────────────────────────
 
 // testEvent mirrors one line of `go test -json` output.
@@ -110,6 +120,36 @@ func padRight(s string, n int) string {
 		return string(runes[:n-1]) + "…"
 	}
 	return s + strings.Repeat(" ", n-count)
+}
+
+// processTestEvent records ev into nodes/topOrder. It is the shared
+// event-processing core used by both the `run` and `matrix` subcommands.
+func processTestEvent(ev testEvent, nodes map[string]*testNode, topOrder *[]string) {
+	n, exists := nodes[ev.Test]
+	if !exists {
+		n = &testNode{name: ev.Test}
+		nodes[ev.Test] = n
+		if !strings.Contains(ev.Test, "/") {
+			*topOrder = append(*topOrder, ev.Test)
+		} else {
+			parentName := ev.Test[:strings.LastIndex(ev.Test, "/")]
+			if parent, ok := nodes[parentName]; ok {
+				parent.children = append(parent.children, ev.Test)
+			}
+		}
+	}
+	switch ev.Action {
+	case "pass", "fail", "skip":
+		n.result = ev.Action
+		n.elapsed = ev.Elapsed
+	case "output":
+		line := strings.TrimRight(ev.Output, "\n")
+		if idx := strings.Index(line, "[S3] "); idx >= 0 {
+			n.s3Lines = append(n.s3Lines, line[idx+5:])
+		} else {
+			n.rawLines = append(n.rawLines, line)
+		}
+	}
 }
 
 // ── ANSI colour helpers ────────────────────────────────────────────────────────

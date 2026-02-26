@@ -60,11 +60,8 @@ func TestLanceDBCompatibility(t *testing.T) {
 	// Source: lance-io/src/object_reader.rs CloudObjectReader::get_range()
 	// ─────────────────────────────────────────────────────────────────
 	t.Run("RangeRead", func(t *testing.T) {
-		key := uniqueKey(t, "lancedb-range")
-		cleanupKey(t, testClient, testBucket, key)
-
 		content := "ABCDEFGHIJKLMNOPQRSTUVWXYZ" // 26 bytes, easy to reason about
-		putObject(t, testClient, testBucket, key, content)
+		key, _ := putKeyForTest(t, "lancedb-range", content)
 
 		ctx, cancel := testContext(t)
 		defer cancel()
@@ -105,10 +102,7 @@ func TestLanceDBCompatibility(t *testing.T) {
 	// ─────────────────────────────────────────────────────────────────
 	t.Run("HeadObject", func(t *testing.T) {
 		const body = "lance-head-me"
-		key := uniqueKey(t, "lancedb-head")
-		cleanupKey(t, testClient, testBucket, key)
-
-		etag := putObject(t, testClient, testBucket, key, body)
+		key, etag := putKeyForTest(t, "lancedb-head", body)
 
 		ctx, cancel := testContext(t)
 		defer cancel()
@@ -135,8 +129,7 @@ func TestLanceDBCompatibility(t *testing.T) {
 	// Source: lance-io/src/object_writer.rs ObjectWriter::flush()
 	// ─────────────────────────────────────────────────────────────────
 	t.Run("PutObject", func(t *testing.T) {
-		key := uniqueKey(t, "lancedb-put")
-		cleanupKey(t, testClient, testBucket, key)
+		key := setupKey(t, "lancedb-put")
 
 		ctx, cancel := testContext(t)
 		defer cancel()
@@ -173,8 +166,7 @@ func TestLanceDBCompatibility(t *testing.T) {
 	// Source: lance/src/dataset/commit.rs ConditionalPutCommitHandler
 	// ─────────────────────────────────────────────────────────────────
 	t.Run("AtomicCreate_SucceedsOnNewKey", func(t *testing.T) {
-		key := uniqueKey(t, "lancedb-atomic-new")
-		cleanupKey(t, testClient, testBucket, key)
+		key := setupKey(t, "lancedb-atomic-new")
 
 		ctx, cancel := testContext(t)
 		defer cancel()
@@ -192,10 +184,7 @@ func TestLanceDBCompatibility(t *testing.T) {
 	})
 
 	t.Run("AtomicCreate_FailsOnExistingKey", func(t *testing.T) {
-		key := uniqueKey(t, "lancedb-atomic-conflict")
-		cleanupKey(t, testClient, testBucket, key)
-
-		putObject(t, testClient, testBucket, key, `{"version":1,"fragments":[]}`)
+		key, _ := putKeyForTest(t, "lancedb-atomic-conflict", `{"version":1,"fragments":[]}`)
 
 		ctx, cancel := testContext(t)
 		defer cancel()
@@ -226,10 +215,7 @@ func TestLanceDBCompatibility(t *testing.T) {
 	// Source: apache/arrow-rs object_store PutMode::Update
 	// ─────────────────────────────────────────────────────────────────
 	t.Run("ConditionalUpdate", func(t *testing.T) {
-		key := uniqueKey(t, "lancedb-conditional-update")
-		cleanupKey(t, testClient, testBucket, key)
-
-		etag := putObject(t, testClient, testBucket, key, "v1")
+		key, etag := putKeyForTest(t, "lancedb-conditional-update", "v1")
 
 		ctx, cancel := testContext(t)
 		defer cancel()
@@ -260,8 +246,7 @@ func TestLanceDBCompatibility(t *testing.T) {
 	// Source: lance-io/src/object_writer.rs ObjectWriter::write_part()
 	// ─────────────────────────────────────────────────────────────────
 	t.Run("MultipartWrite", func(t *testing.T) {
-		key := uniqueKey(t, "lancedb-mpu")
-		cleanupKey(t, testClient, testBucket, key)
+		key := setupKey(t, "lancedb-mpu")
 
 		out, err := doMultipartUpload(t, testClient, testBucket, key,
 			"lance-large-fragment-body", nil, nil)
@@ -281,8 +266,7 @@ func TestLanceDBCompatibility(t *testing.T) {
 	// Source: lance/src/dataset/commit.rs + object_store CompleteMultipartMode
 	// ─────────────────────────────────────────────────────────────────
 	t.Run("MultipartAtomicCreate", func(t *testing.T) {
-		key := uniqueKey(t, "lancedb-mpu-atomic")
-		cleanupKey(t, testClient, testBucket, key)
+		key := setupKey(t, "lancedb-mpu-atomic")
 
 		// First upload must succeed (key does not yet exist).
 		out, err := doMultipartUpload(t, testClient, testBucket, key,
@@ -308,8 +292,7 @@ func TestLanceDBCompatibility(t *testing.T) {
 	// Source: lance-io/src/object_writer.rs ObjectWriter::abort()
 	// ─────────────────────────────────────────────────────────────────
 	t.Run("AbortMultipartUpload", func(t *testing.T) {
-		key := uniqueKey(t, "lancedb-abort")
-		cleanupKey(t, testClient, testBucket, key)
+		key := setupKey(t, "lancedb-abort")
 
 		ctx, cancel := testContext(t)
 		defer cancel()
@@ -401,9 +384,9 @@ func TestLanceDBCompatibility(t *testing.T) {
 	// Source: lance/src/dataset/external_manifest.rs
 	// ─────────────────────────────────────────────────────────────────
 	t.Run("DeleteObject", func(t *testing.T) {
-		key := uniqueKey(t, "lancedb-delete-single")
-		// No cleanupKey registration: the test itself removes the object.
-		putObject(t, testClient, testBucket, key, "to-be-deleted")
+		// putKeyForTest registers cleanup as a safety net; the test itself
+		// removes the object so cleanup is a no-op in the success path.
+		key, _ := putKeyForTest(t, "lancedb-delete-single", "to-be-deleted")
 
 		ctx, cancel := testContext(t)
 		defer cancel()
@@ -473,13 +456,9 @@ func TestLanceDBCompatibility(t *testing.T) {
 	// Source: lance/src/dataset/external_manifest.rs ExternalManifestCommitHandler
 	// ─────────────────────────────────────────────────────────────────
 	t.Run("CopyObject", func(t *testing.T) {
-		srcKey := uniqueKey(t, "lancedb-copy-src")
-		dstKey := uniqueKey(t, "lancedb-copy-dst")
-		cleanupKey(t, testClient, testBucket, srcKey)
-		cleanupKey(t, testClient, testBucket, dstKey)
-
 		const manifestJSON = `{"version":1,"fragments":["frag-0.lance"]}`
-		putObject(t, testClient, testBucket, srcKey, manifestJSON)
+		srcKey, _ := putKeyForTest(t, "lancedb-copy-src", manifestJSON)
+		dstKey := setupKey(t, "lancedb-copy-dst")
 
 		ctx, cancel := testContext(t)
 		defer cancel()

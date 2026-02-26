@@ -1,4 +1,4 @@
-.PHONY: test test-pretty test-json test-matrix test-matrix-json test-verbose test-unit test-put test-multipart test-copy test-get test-head test-edge lint fmt vet tidy clean build check help
+.PHONY: test test-pretty test-json test-matrix test-matrix-json test-verbose test-unit test-put test-multipart test-copy test-get test-head test-edge test-lancedb lint fmt vet tidy clean build check help
 
 GOLANGCI_LINT := golangci-lint
 
@@ -53,6 +53,9 @@ test-head: ## Run only HeadObject conditional read tests
 
 test-edge: ## Run only edge case tests
 	go test $(INTEGRATION_FLAGS) -timeout 10m -run TestEdgeCases ./s3test/
+
+test-lancedb: ## Run only LanceDB compatibility tests
+	go test $(INTEGRATION_FLAGS) -timeout 5m -run TestLanceDBCompatibility ./s3test/
 
 build: ## Build the s3conditionaltest CLI tool to the repo root
 	go build -o s3conditionaltest ./cmd/s3conditionaltest/

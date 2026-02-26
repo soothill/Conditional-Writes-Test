@@ -4,7 +4,6 @@ package s3test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -15,11 +14,7 @@ import (
 func TestHeadObjectConditionalReads(t *testing.T) {
 	t.Run("IfMatch", func(t *testing.T) {
 		t.Run("CorrectETag", func(t *testing.T) {
-			key := uniqueKey(t, "head-ifmatch-correct")
-			cleanupKey(t, testClient, testBucket, key)
-
-			etag := putObject(t, testClient, testBucket, key, "head-me")
-
+			key, etag := putKeyForTest(t, "head-ifmatch-correct", "head-me")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -34,11 +29,7 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 		})
 
 		t.Run("WrongETag", func(t *testing.T) {
-			key := uniqueKey(t, "head-ifmatch-wrong")
-			cleanupKey(t, testClient, testBucket, key)
-
-			putObject(t, testClient, testBucket, key, "head-me")
-
+			key, _ := putKeyForTest(t, "head-ifmatch-wrong", "head-me")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -53,11 +44,7 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 
 	t.Run("IfNoneMatch", func(t *testing.T) {
 		t.Run("MatchingETag", func(t *testing.T) {
-			key := uniqueKey(t, "head-ifnonematch-match")
-			cleanupKey(t, testClient, testBucket, key)
-
-			etag := putObject(t, testClient, testBucket, key, "head-me")
-
+			key, etag := putKeyForTest(t, "head-ifnonematch-match", "head-me")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -70,11 +57,7 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 		})
 
 		t.Run("DifferentETag", func(t *testing.T) {
-			key := uniqueKey(t, "head-ifnonematch-diff")
-			cleanupKey(t, testClient, testBucket, key)
-
-			etag := putObject(t, testClient, testBucket, key, "head-me")
-
+			key, etag := putKeyForTest(t, "head-ifnonematch-diff", "head-me")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -89,11 +72,7 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 		})
 
 		t.Run("Wildcard", func(t *testing.T) {
-			key := uniqueKey(t, "head-ifnonematch-wildcard")
-			cleanupKey(t, testClient, testBucket, key)
-
-			putObject(t, testClient, testBucket, key, "head-me")
-
+			key, _ := putKeyForTest(t, "head-ifnonematch-wildcard", "head-me")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -111,11 +90,7 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 
 	t.Run("IfModifiedSince", func(t *testing.T) {
 		t.Run("Modified", func(t *testing.T) {
-			key := uniqueKey(t, "head-ifmodified-yes")
-			cleanupKey(t, testClient, testBucket, key)
-
-			putObject(t, testClient, testBucket, key, "head-me")
-
+			key, _ := putKeyForTest(t, "head-ifmodified-yes", "head-me")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -130,10 +105,7 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 		})
 
 		t.Run("NotModified", func(t *testing.T) {
-			key := uniqueKey(t, "head-ifmodified-no")
-			cleanupKey(t, testClient, testBucket, key)
-
-			putObject(t, testClient, testBucket, key, "head-me")
+			key, _ := putKeyForTest(t, "head-ifmodified-no", "head-me")
 
 			// AWS S3 evaluates If-Modified-Since with a strict greater-than
 			// comparison at 1-second HTTP date granularity. If-Modified-Since
@@ -142,9 +114,7 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 			// AWS to silently ignore the header and return 200. We therefore
 			// advance past the current second boundary before capturing the
 			// timestamp used as IfModifiedSince.
-			nextSecond := time.Now().Truncate(time.Second).Add(time.Second)
-			time.Sleep(time.Until(nextSecond) + 50*time.Millisecond)
-			afterCreate := time.Now()
+			afterCreate := waitForNextSecond()
 
 			ctx, cancel := testContext(t)
 			defer cancel()
@@ -160,11 +130,7 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 
 	t.Run("IfUnmodifiedSince", func(t *testing.T) {
 		t.Run("Unmodified", func(t *testing.T) {
-			key := uniqueKey(t, "head-ifunmodified-yes")
-			cleanupKey(t, testClient, testBucket, key)
-
-			putObject(t, testClient, testBucket, key, "head-me")
-
+			key, _ := putKeyForTest(t, "head-ifunmodified-yes", "head-me")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -178,11 +144,7 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 		})
 
 		t.Run("Modified", func(t *testing.T) {
-			key := uniqueKey(t, "head-ifunmodified-no")
-			cleanupKey(t, testClient, testBucket, key)
-
-			putObject(t, testClient, testBucket, key, "head-me")
-
+			key, _ := putKeyForTest(t, "head-ifunmodified-no", "head-me")
 			ctx, cancel := testContext(t)
 			defer cancel()
 

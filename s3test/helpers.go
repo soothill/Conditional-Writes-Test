@@ -65,6 +65,17 @@ func wellFutureTime() time.Time {
 	return time.Now().Add(24 * time.Hour)
 }
 
+// waitForNextSecond blocks until the next clock-second boundary and returns
+// the captured timestamp just after crossing it. AWS S3 evaluates
+// If-Modified-Since and CopySourceIfModifiedSince at 1-second HTTP-date
+// granularity, so the condition timestamp must fall in a strictly later second
+// than the object's LastModified. A 50 ms grace period absorbs clock jitter.
+func waitForNextSecond() time.Time {
+	boundary := time.Now().Truncate(time.Second).Add(time.Second)
+	time.Sleep(time.Until(boundary) + 50*time.Millisecond)
+	return time.Now()
+}
+
 // copySource formats the CopySource field required by CopyObject as "bucket/key".
 func copySource(bucket, key string) string {
 	return bucket + "/" + key

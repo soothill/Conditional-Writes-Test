@@ -15,9 +15,7 @@ import (
 func TestPutObjectConditionalWrites(t *testing.T) {
 	t.Run("IfNoneMatch", func(t *testing.T) {
 		t.Run("NewKey", func(t *testing.T) {
-			key := uniqueKey(t, "put-ifnonematch-new")
-			cleanupKey(t, testClient, testBucket, key)
-
+			key := setupKey(t, "put-ifnonematch-new")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -33,12 +31,7 @@ func TestPutObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("ExistingKey", func(t *testing.T) {
-			key := uniqueKey(t, "put-ifnonematch-existing")
-			cleanupKey(t, testClient, testBucket, key)
-
-			// Create the object first.
-			putObject(t, testClient, testBucket, key, "original")
-
+			key, _ := putKeyForTest(t, "put-ifnonematch-existing", "original")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -52,11 +45,7 @@ func TestPutObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("AfterDelete", func(t *testing.T) {
-			key := uniqueKey(t, "put-ifnonematch-afterdelete")
-			cleanupKey(t, testClient, testBucket, key)
-
-			// Create then delete the object.
-			putObject(t, testClient, testBucket, key, "temporary")
+			key, _ := putKeyForTest(t, "put-ifnonematch-afterdelete", "temporary")
 			deleteObject(t, testClient, testBucket, key)
 
 			ctx, cancel := testContext(t)
@@ -75,12 +64,7 @@ func TestPutObjectConditionalWrites(t *testing.T) {
 
 	t.Run("IfMatch", func(t *testing.T) {
 		t.Run("CorrectETag", func(t *testing.T) {
-			key := uniqueKey(t, "put-ifmatch-correct")
-			cleanupKey(t, testClient, testBucket, key)
-
-			// Create object and capture ETag.
-			etag := putObject(t, testClient, testBucket, key, "original")
-
+			key, etag := putKeyForTest(t, "put-ifmatch-correct", "original")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -96,11 +80,7 @@ func TestPutObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("WrongETag", func(t *testing.T) {
-			key := uniqueKey(t, "put-ifmatch-wrong")
-			cleanupKey(t, testClient, testBucket, key)
-
-			putObject(t, testClient, testBucket, key, "original")
-
+			key, _ := putKeyForTest(t, "put-ifmatch-wrong", "original")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -114,9 +94,9 @@ func TestPutObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("NonExistentKey", func(t *testing.T) {
-			key := uniqueKey(t, "put-ifmatch-nonexistent")
-			// No cleanup needed; object should not be created.
-
+			// setupKey registers cleanup: deleteObject is a no-op if the
+			// object is never created, so cleanup is always safe.
+			key := setupKey(t, "put-ifmatch-nonexistent")
 			ctx, cancel := testContext(t)
 			defer cancel()
 
@@ -133,13 +113,8 @@ func TestPutObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("StaleETag", func(t *testing.T) {
-			key := uniqueKey(t, "put-ifmatch-stale")
-			cleanupKey(t, testClient, testBucket, key)
-
-			// Create object, capture original ETag.
-			originalETag := putObject(t, testClient, testBucket, key, "version1")
-
-			// Overwrite to get a new ETag; original is now stale.
+			key, originalETag := putKeyForTest(t, "put-ifmatch-stale", "version1")
+			// Overwrite to get a new ETag; originalETag is now stale.
 			putObject(t, testClient, testBucket, key, "version2")
 
 			ctx, cancel := testContext(t)
@@ -155,12 +130,7 @@ func TestPutObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("ChainedUpdates", func(t *testing.T) {
-			key := uniqueKey(t, "put-ifmatch-chained")
-			cleanupKey(t, testClient, testBucket, key)
-
-			// Put version 1.
-			etag1 := putObject(t, testClient, testBucket, key, "version1")
-
+			key, etag1 := putKeyForTest(t, "put-ifmatch-chained", "version1")
 			ctx, cancel := testContext(t)
 			defer cancel()
 

@@ -4,7 +4,6 @@ package s3test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -15,12 +14,8 @@ import (
 func TestCopyObjectConditionalWrites(t *testing.T) {
 	t.Run("IfNoneMatch", func(t *testing.T) {
 		t.Run("NewDestination", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copy-ifnonematch-src")
-			dstKey := uniqueKey(t, "copy-ifnonematch-dst-new")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
+			srcKey, _ := putKeyForTest(t, "copy-ifnonematch-src", "source-content")
+			dstKey := setupKey(t, "copy-ifnonematch-dst-new")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
@@ -37,13 +32,8 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("ExistingDestination", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copy-ifnonematch-src")
-			dstKey := uniqueKey(t, "copy-ifnonematch-dst-existing")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
-			putObject(t, testClient, testBucket, dstKey, "existing-dest")
+			srcKey, _ := putKeyForTest(t, "copy-ifnonematch-src", "source-content")
+			dstKey, _ := putKeyForTest(t, "copy-ifnonematch-dst-existing", "existing-dest")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
@@ -58,13 +48,8 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("AfterDelete", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copy-ifnonematch-src")
-			dstKey := uniqueKey(t, "copy-ifnonematch-dst-afterdel")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
-			putObject(t, testClient, testBucket, dstKey, "to-be-deleted")
+			srcKey, _ := putKeyForTest(t, "copy-ifnonematch-src", "source-content")
+			dstKey, _ := putKeyForTest(t, "copy-ifnonematch-dst-afterdel", "to-be-deleted")
 			deleteObject(t, testClient, testBucket, dstKey)
 
 			ctx, cancel := testContext(t)
@@ -83,13 +68,8 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 
 	t.Run("IfMatch", func(t *testing.T) {
 		t.Run("CorrectETag", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copy-ifmatch-src")
-			dstKey := uniqueKey(t, "copy-ifmatch-dst-correct")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
-			dstETag := putObject(t, testClient, testBucket, dstKey, "dest-original")
+			srcKey, _ := putKeyForTest(t, "copy-ifmatch-src", "source-content")
+			dstKey, dstETag := putKeyForTest(t, "copy-ifmatch-dst-correct", "dest-original")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
@@ -106,13 +86,8 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("WrongETag", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copy-ifmatch-src")
-			dstKey := uniqueKey(t, "copy-ifmatch-dst-wrong")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
-			putObject(t, testClient, testBucket, dstKey, "dest-original")
+			srcKey, _ := putKeyForTest(t, "copy-ifmatch-src", "source-content")
+			dstKey, _ := putKeyForTest(t, "copy-ifmatch-dst-wrong", "dest-original")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
@@ -127,11 +102,10 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("NonExistentDestination", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copy-ifmatch-src")
-			dstKey := uniqueKey(t, "copy-ifmatch-dst-nonexistent")
-			cleanupKey(t, testClient, testBucket, srcKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
+			srcKey, _ := putKeyForTest(t, "copy-ifmatch-src", "source-content")
+			// setupKey registers cleanup; deleteObject is a no-op if the
+			// object is never created, so cleanup is always safe.
+			dstKey := setupKey(t, "copy-ifmatch-dst-nonexistent")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
@@ -151,12 +125,8 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 
 	t.Run("CopySourceIfMatch", func(t *testing.T) {
 		t.Run("CorrectETag", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copysrc-ifmatch-src")
-			dstKey := uniqueKey(t, "copysrc-ifmatch-dst")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			srcETag := putObject(t, testClient, testBucket, srcKey, "source-content")
+			srcKey, srcETag := putKeyForTest(t, "copysrc-ifmatch-src", "source-content")
+			dstKey := setupKey(t, "copysrc-ifmatch-dst")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
@@ -172,12 +142,8 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("WrongETag", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copysrc-ifmatch-src-wrong")
-			dstKey := uniqueKey(t, "copysrc-ifmatch-dst-wrong")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
+			srcKey, _ := putKeyForTest(t, "copysrc-ifmatch-src-wrong", "source-content")
+			dstKey := setupKey(t, "copysrc-ifmatch-dst-wrong")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
@@ -194,12 +160,8 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 
 	t.Run("CopySourceIfNoneMatch", func(t *testing.T) {
 		t.Run("MatchingETag", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copysrc-ifnonematch-src-match")
-			dstKey := uniqueKey(t, "copysrc-ifnonematch-dst-match")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			srcETag := putObject(t, testClient, testBucket, srcKey, "source-content")
+			srcKey, srcETag := putKeyForTest(t, "copysrc-ifnonematch-src-match", "source-content")
+			dstKey := setupKey(t, "copysrc-ifnonematch-dst-match")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
@@ -218,12 +180,8 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("DifferentETag", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copysrc-ifnonematch-src-diff")
-			dstKey := uniqueKey(t, "copysrc-ifnonematch-dst-diff")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
+			srcKey, _ := putKeyForTest(t, "copysrc-ifnonematch-src-diff", "source-content")
+			dstKey := setupKey(t, "copysrc-ifnonematch-dst-diff")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
@@ -241,21 +199,17 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 
 	t.Run("CopySourceIfModifiedSince", func(t *testing.T) {
 		t.Run("Modified", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copysrc-ifmodified-src-yes")
-			dstKey := uniqueKey(t, "copysrc-ifmodified-dst-yes")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
+			srcKey, _ := putKeyForTest(t, "copysrc-ifmodified-src-yes", "source-content")
+			dstKey := setupKey(t, "copysrc-ifmodified-dst-yes")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
 
 			// Source was modified well after wellPastTime(), so the copy proceeds.
 			out, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
-				Bucket:                   aws.String(testBucket),
-				Key:                      aws.String(dstKey),
-				CopySource:               aws.String(copySource(testBucket, srcKey)),
+				Bucket:                    aws.String(testBucket),
+				Key:                       aws.String(dstKey),
+				CopySource:                aws.String(copySource(testBucket, srcKey)),
 				CopySourceIfModifiedSince: aws.Time(wellPastTime()),
 			})
 			require.NoError(t, err, "CopyObject with CopySourceIfModifiedSince in the past should succeed")
@@ -263,29 +217,23 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("NotModified", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copysrc-ifmodified-src-no")
-			dstKey := uniqueKey(t, "copysrc-ifmodified-dst-no")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
+			srcKey, _ := putKeyForTest(t, "copysrc-ifmodified-src-no", "source-content")
+			dstKey := setupKey(t, "copysrc-ifmodified-dst-no")
 
 			// AWS S3 evaluates CopySourceIfModifiedSince at 1-second HTTP date
 			// granularity. We must wait until the current second rolls over so
 			// that the timestamp we pass is strictly after the source object's
 			// LastModified, ensuring the "not modified since" condition is true.
-			nextSecond := time.Now().Truncate(time.Second).Add(time.Second)
-			time.Sleep(time.Until(nextSecond) + 50*time.Millisecond)
-			afterCreate := time.Now()
+			afterCreate := waitForNextSecond()
 
 			ctx, cancel := testContext(t)
 			defer cancel()
 
 			// Source has not been modified since afterCreate → copy should fail.
 			_, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
-				Bucket:                   aws.String(testBucket),
-				Key:                      aws.String(dstKey),
-				CopySource:               aws.String(copySource(testBucket, srcKey)),
+				Bucket:                    aws.String(testBucket),
+				Key:                       aws.String(dstKey),
+				CopySource:                aws.String(copySource(testBucket, srcKey)),
 				CopySourceIfModifiedSince: aws.Time(afterCreate),
 			})
 			requirePreconditionFailed(t, err)
@@ -294,21 +242,17 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 
 	t.Run("CopySourceIfUnmodifiedSince", func(t *testing.T) {
 		t.Run("Unmodified", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copysrc-ifunmodified-src-yes")
-			dstKey := uniqueKey(t, "copysrc-ifunmodified-dst-yes")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
+			srcKey, _ := putKeyForTest(t, "copysrc-ifunmodified-src-yes", "source-content")
+			dstKey := setupKey(t, "copysrc-ifunmodified-dst-yes")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
 
 			// Source has not been modified since wellFutureTime(), so the copy proceeds.
 			out, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
-				Bucket:                     aws.String(testBucket),
-				Key:                        aws.String(dstKey),
-				CopySource:                 aws.String(copySource(testBucket, srcKey)),
+				Bucket:                      aws.String(testBucket),
+				Key:                         aws.String(dstKey),
+				CopySource:                  aws.String(copySource(testBucket, srcKey)),
 				CopySourceIfUnmodifiedSince: aws.Time(wellFutureTime()),
 			})
 			require.NoError(t, err, "CopyObject with CopySourceIfUnmodifiedSince in the future should succeed")
@@ -316,21 +260,17 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("Modified", func(t *testing.T) {
-			srcKey := uniqueKey(t, "copysrc-ifunmodified-src-no")
-			dstKey := uniqueKey(t, "copysrc-ifunmodified-dst-no")
-			cleanupKey(t, testClient, testBucket, srcKey)
-			cleanupKey(t, testClient, testBucket, dstKey)
-
-			putObject(t, testClient, testBucket, srcKey, "source-content")
+			srcKey, _ := putKeyForTest(t, "copysrc-ifunmodified-src-no", "source-content")
+			dstKey := setupKey(t, "copysrc-ifunmodified-dst-no")
 
 			ctx, cancel := testContext(t)
 			defer cancel()
 
 			// Source was modified after wellPastTime(), so the unmodified condition fails.
 			_, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
-				Bucket:                     aws.String(testBucket),
-				Key:                        aws.String(dstKey),
-				CopySource:                 aws.String(copySource(testBucket, srcKey)),
+				Bucket:                      aws.String(testBucket),
+				Key:                         aws.String(dstKey),
+				CopySource:                  aws.String(copySource(testBucket, srcKey)),
 				CopySourceIfUnmodifiedSince: aws.Time(wellPastTime()),
 			})
 			requirePreconditionFailed(t, err)

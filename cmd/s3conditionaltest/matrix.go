@@ -251,7 +251,7 @@ func runProvider(p providerDef, timeout string) *matrixRunResult {
 
 func parseTestOutput(r io.Reader, res *matrixRunResult) {
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20)
+	scanner.Buffer(make([]byte, scannerBufSize), scannerBufSize)
 	for scanner.Scan() {
 		var ev testEvent
 		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
@@ -268,32 +268,7 @@ func parseTestOutput(r io.Reader, res *matrixRunResult) {
 			continue
 		}
 
-		n, exists := res.nodes[ev.Test]
-		if !exists {
-			n = &testNode{name: ev.Test}
-			res.nodes[ev.Test] = n
-			if !strings.Contains(ev.Test, "/") {
-				res.topOrder = append(res.topOrder, ev.Test)
-			} else {
-				parentName := ev.Test[:strings.LastIndex(ev.Test, "/")]
-				if parent, ok := res.nodes[parentName]; ok {
-					parent.children = append(parent.children, ev.Test)
-				}
-			}
-		}
-
-		switch ev.Action {
-		case "pass", "fail", "skip":
-			n.result = ev.Action
-			n.elapsed = ev.Elapsed
-		case "output":
-			line := strings.TrimRight(ev.Output, "\n")
-			if idx := strings.Index(line, "[S3] "); idx >= 0 {
-				n.s3Lines = append(n.s3Lines, line[idx+5:])
-			} else {
-				n.rawLines = append(n.rawLines, line)
-			}
-		}
+		processTestEvent(ev, res.nodes, &res.topOrder)
 	}
 }
 
@@ -351,7 +326,11 @@ func matrixShouldDisplay(topName string, runs []*matrixRunResult, filterRe *rege
 	return false
 }
 
-const matrixTestColWidth = 52 // visible chars for the test-name column
+// matrixTestColWidth is the visible-character width of the test-name column.
+// 52 chars fits the longest sub-test names in the suite (e.g. "NonExistentDestination")
+// with a 2-space indent and a small margin, keeping the table under 80 chars wide
+// even when two provider columns are shown.
+const matrixTestColWidth = 52
 
 func matrixRenderText(runs []*matrixRunResult, topOrder []string, filterRe *regexp.Regexp, useColor bool) {
 	// Column width per provider: wide enough for the name plus 2 spaces of

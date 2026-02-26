@@ -141,14 +141,8 @@ func runRenderText(
 
 			// Show a single-line failure reason for failing sub-tests.
 			if child.result == "fail" {
-				msg := extractFailureMsg(child.rawLines)
-				if msg != "" {
-					const maxMsg = 90
-					if utf8.RuneCountInString(msg) > maxMsg {
-						runes := []rune(msg)
-						msg = string(runes[:maxMsg-1]) + "…"
-					}
-					fmt.Printf("     %s\n", colored(useColor, ansiRed, msg))
+				if msg := extractFailureMsg(child.rawLines); msg != "" {
+					fmt.Printf("     %s\n", colored(useColor, ansiRed, truncateStr(msg, maxFailureMsgLen)))
 				}
 			}
 		}
@@ -163,14 +157,8 @@ func runRenderText(
 				fmt.Printf("       %s\n", colored(useColor, ansiCyan, s3Info))
 			}
 			if top.result == "fail" {
-				msg := extractFailureMsg(top.rawLines)
-				if msg != "" {
-					const maxMsg = 90
-					if utf8.RuneCountInString(msg) > maxMsg {
-						runes := []rune(msg)
-						msg = string(runes[:maxMsg-1]) + "…"
-					}
-					fmt.Printf("     %s\n", colored(useColor, ansiRed, msg))
+				if msg := extractFailureMsg(top.rawLines); msg != "" {
+					fmt.Printf("     %s\n", colored(useColor, ansiRed, truncateStr(msg, maxFailureMsgLen)))
 				}
 			}
 		}
@@ -243,6 +231,15 @@ func runRenderJSON(nodes map[string]*testNode, topOrder []string, filterRe *rege
 	}
 }
 
+// truncateStr returns s truncated to max visible runes with "…" appended.
+// If s fits within max runes it is returned unchanged.
+func truncateStr(s string, max int) string {
+	if utf8.RuneCountInString(s) <= max {
+		return s
+	}
+	return string([]rune(s)[:max-1]) + "…"
+}
+
 // nullSlice returns nil when s is empty so that JSON encodes the field as
 // null rather than []. Keeps the output clean when there are no S3 responses.
 func nullSlice(s []string) []string {
@@ -288,7 +285,7 @@ func runMain(args []string) {
 	var pkgElapsed float64
 
 	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1 MB — handles long output lines
+	scanner.Buffer(make([]byte, scannerBufSize), scannerBufSize)
 
 	for scanner.Scan() {
 		var ev testEvent
@@ -313,32 +310,7 @@ func runMain(args []string) {
 			continue
 		}
 
-		n, exists := nodes[ev.Test]
-		if !exists {
-			n = &testNode{name: ev.Test}
-			nodes[ev.Test] = n
-			if !strings.Contains(ev.Test, "/") {
-				topOrder = append(topOrder, ev.Test)
-			} else {
-				parentName := ev.Test[:strings.LastIndex(ev.Test, "/")]
-				if parent, ok := nodes[parentName]; ok {
-					parent.children = append(parent.children, ev.Test)
-				}
-			}
-		}
-
-		switch ev.Action {
-		case "pass", "fail", "skip":
-			n.result = ev.Action
-			n.elapsed = ev.Elapsed
-		case "output":
-			line := strings.TrimRight(ev.Output, "\n")
-			if idx := strings.Index(line, "[S3] "); idx >= 0 {
-				n.s3Lines = append(n.s3Lines, line[idx+5:])
-			} else {
-				n.rawLines = append(n.rawLines, line)
-			}
-		}
+		processTestEvent(ev, nodes, &topOrder)
 	}
 
 	if err := scanner.Err(); err != nil {

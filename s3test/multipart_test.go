@@ -15,8 +15,7 @@ import (
 func TestMultipartConditionalWrites(t *testing.T) {
 	t.Run("IfNoneMatch", func(t *testing.T) {
 		t.Run("NewKey", func(t *testing.T) {
-			key := uniqueKey(t, "mpu-ifnonematch-new")
-			cleanupKey(t, testClient, testBucket, key)
+			key := setupKey(t, "mpu-ifnonematch-new")
 
 			out, err := doMultipartUpload(t, testClient, testBucket, key, "multipart-body",
 				aws.String("*"), nil)
@@ -39,11 +38,7 @@ func TestMultipartConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("ExistingKey", func(t *testing.T) {
-			key := uniqueKey(t, "mpu-ifnonematch-existing")
-			cleanupKey(t, testClient, testBucket, key)
-
-			// Create the object first.
-			putObject(t, testClient, testBucket, key, "existing-object")
+			key, _ := putKeyForTest(t, "mpu-ifnonematch-existing", "existing-object")
 
 			_, err := doMultipartUpload(t, testClient, testBucket, key, "multipart-overwrite",
 				aws.String("*"), nil)
@@ -51,11 +46,7 @@ func TestMultipartConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("AfterDelete", func(t *testing.T) {
-			key := uniqueKey(t, "mpu-ifnonematch-afterdelete")
-			cleanupKey(t, testClient, testBucket, key)
-
-			// Create then delete the object.
-			putObject(t, testClient, testBucket, key, "temporary")
+			key, _ := putKeyForTest(t, "mpu-ifnonematch-afterdelete", "temporary")
 			deleteObject(t, testClient, testBucket, key)
 
 			out, err := doMultipartUpload(t, testClient, testBucket, key, "after-delete",
@@ -67,11 +58,7 @@ func TestMultipartConditionalWrites(t *testing.T) {
 
 	t.Run("IfMatch", func(t *testing.T) {
 		t.Run("CorrectETag", func(t *testing.T) {
-			key := uniqueKey(t, "mpu-ifmatch-correct")
-			cleanupKey(t, testClient, testBucket, key)
-
-			// Create object and capture ETag.
-			etag := putObject(t, testClient, testBucket, key, "original")
+			key, etag := putKeyForTest(t, "mpu-ifmatch-correct", "original")
 
 			out, err := doMultipartUpload(t, testClient, testBucket, key, "updated-via-mpu",
 				nil, aws.String(etag))
@@ -94,10 +81,7 @@ func TestMultipartConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("WrongETag", func(t *testing.T) {
-			key := uniqueKey(t, "mpu-ifmatch-wrong")
-			cleanupKey(t, testClient, testBucket, key)
-
-			putObject(t, testClient, testBucket, key, "original")
+			key, _ := putKeyForTest(t, "mpu-ifmatch-wrong", "original")
 
 			_, err := doMultipartUpload(t, testClient, testBucket, key, "overwrite-attempt",
 				nil, aws.String(wrongETag))
@@ -105,7 +89,7 @@ func TestMultipartConditionalWrites(t *testing.T) {
 		})
 
 		t.Run("NonExistentKey", func(t *testing.T) {
-			key := uniqueKey(t, "mpu-ifmatch-nonexistent")
+			key := setupKey(t, "mpu-ifmatch-nonexistent")
 
 			_, err := doMultipartUpload(t, testClient, testBucket, key, "should-not-exist",
 				nil, aws.String(emptyObjectETag))

@@ -30,70 +30,11 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	client, err := BuildClient(cfg)
+	cfg, client, err := resolveClientForBucket(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create S3 client: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Preflight: cannot access bucket %q: %v\n", cfg.Bucket, err)
+		printBucketAccessHint(err)
 		os.Exit(1)
-	}
-
-	// Preflight: verify the bucket is reachable before running any tests.
-	// A failure here means every subsequent test would fail with the same
-	// connectivity or credential error, so we exit immediately with a clear
-	// message rather than letting hundreds of test cases all report failures.
-	//
-	// Special case: if the provider returns a 301 Moved Permanently the
-	// configured endpoint points at the wrong region. The AWS SDK does not
-	// follow S3 redirects automatically (re-signing is required), so the 301
-	// surfaces as an error. We extract the corrected endpoint from the
-	// Location header, rebuild the client, and retry — tests can then run
-	// without the user having to fix their config first.
-	preCtx, preCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer preCancel()
-
-	if _, headErr := client.HeadBucket(preCtx, &s3.HeadBucketInput{
-		Bucket: aws.String(cfg.Bucket),
-	}); headErr != nil {
-		if correctedEndpoint, correctedRegion, ok := endpointFromRedirect(headErr); ok {
-			hint := fmt.Sprintf("S3_ENDPOINT=%s", correctedEndpoint)
-			if correctedRegion != "" && correctedRegion != cfg.Region {
-				hint += fmt.Sprintf("  AWS_REGION=%s", correctedRegion)
-			}
-			fmt.Fprintf(os.Stderr,
-				"Preflight: %s redirected to %s (wrong region) — retrying with corrected config.\n"+
-					"  Update %s in your .env to remove this delay.\n",
-				cfg.Endpoint, correctedEndpoint, hint)
-
-			cfg.Endpoint = correctedEndpoint
-			if correctedRegion != "" {
-				cfg.Region = correctedRegion
-			}
-			client, err = BuildClient(cfg)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to rebuild S3 client: %v\n", err)
-				os.Exit(1)
-			}
-
-			retryCtx, retryCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer retryCancel()
-			if _, retryErr := client.HeadBucket(retryCtx, &s3.HeadBucketInput{
-				Bucket: aws.String(cfg.Bucket),
-			}); retryErr != nil {
-				fmt.Fprintf(os.Stderr, "Preflight: bucket %q still unreachable at %s: %v\n",
-					cfg.Bucket, correctedEndpoint, retryErr)
-				fmt.Fprintf(os.Stderr, "Check that AWS_REGION matches the bucket's actual region.\n")
-				os.Exit(1)
-			}
-			// Successfully connected via corrected endpoint — fall through.
-		} else {
-			fmt.Fprintf(os.Stderr, "Preflight: cannot access bucket %q: %v\n", cfg.Bucket, headErr)
-			if strings.Contains(headErr.Error(), "301") || strings.Contains(headErr.Error(), "MovedPermanently") {
-				fmt.Fprintf(os.Stderr, "Hint: 301 MovedPermanently means S3_ENDPOINT is for the wrong region.\n")
-				fmt.Fprintf(os.Stderr, "      Check your bucket's region and update S3_ENDPOINT and AWS_REGION.\n")
-			} else {
-				fmt.Fprintf(os.Stderr, "Check S3_BUCKET, S3_ENDPOINT, and credentials in your .env file.\n")
-			}
-			os.Exit(1)
-		}
 	}
 
 	testCfg = cfg
@@ -101,6 +42,83 @@ func TestMain(m *testing.M) {
 	testBucket = cfg.Bucket
 
 	os.Exit(m.Run())
+}
+
+// resolveClientForBucket creates an S3 client for cfg, verifies that the
+// configured bucket is reachable via HeadBucket, and automatically corrects
+// the endpoint if the provider returns a 301 redirect (wrong region). It
+// returns the — possibly updated — Config and a ready-to-use Client.
+//
+// A 301 redirect means the SDK pointed at the wrong regional endpoint. Because
+// S3 requests must be re-signed for the new endpoint the SDK does not follow
+// redirects automatically; the raw HTTP 301 response surfaces as an error with
+// a Location header. resolveClientForBucket extracts the corrected endpoint,
+// rebuilds the client, and retries once so that tests can run immediately
+// without the user having to fix their config first.
+func resolveClientForBucket(cfg Config) (Config, *s3.Client, error) {
+	client, err := BuildClient(cfg)
+	if err != nil {
+		return cfg, nil, fmt.Errorf("create S3 client: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	_, headErr := client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(cfg.Bucket),
+	})
+	if headErr == nil {
+		return cfg, client, nil // bucket reachable on first try
+	}
+
+	correctedEndpoint, correctedRegion, ok := endpointFromRedirect(headErr)
+	if !ok {
+		return cfg, nil, headErr // genuine access error, not a redirect
+	}
+
+	// 301 redirect: inform the user and retry with the corrected endpoint.
+	hint := fmt.Sprintf("S3_ENDPOINT=%s", correctedEndpoint)
+	if correctedRegion != "" && correctedRegion != cfg.Region {
+		hint += fmt.Sprintf("  AWS_REGION=%s", correctedRegion)
+	}
+	fmt.Fprintf(os.Stderr,
+		"Preflight: %s redirected to %s (wrong region) — retrying with corrected config.\n"+
+			"  Update %s in your .env to remove this delay.\n",
+		cfg.Endpoint, correctedEndpoint, hint)
+
+	cfg.Endpoint = correctedEndpoint
+	if correctedRegion != "" {
+		cfg.Region = correctedRegion
+	}
+
+	client, err = BuildClient(cfg)
+	if err != nil {
+		return cfg, nil, fmt.Errorf("rebuild S3 client after redirect: %w", err)
+	}
+
+	retryCtx, retryCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer retryCancel()
+
+	if _, retryErr := client.HeadBucket(retryCtx, &s3.HeadBucketInput{
+		Bucket: aws.String(cfg.Bucket),
+	}); retryErr != nil {
+		return cfg, nil, fmt.Errorf("bucket %q still unreachable at %s: %w",
+			cfg.Bucket, correctedEndpoint, retryErr)
+	}
+
+	return cfg, client, nil // successfully connected via corrected endpoint
+}
+
+// printBucketAccessHint writes a context-specific troubleshooting hint for
+// bucket access failures to stderr.
+func printBucketAccessHint(err error) {
+	msg := err.Error()
+	if strings.Contains(msg, "301") || strings.Contains(msg, "MovedPermanently") {
+		fmt.Fprintf(os.Stderr, "Hint: 301 MovedPermanently means S3_ENDPOINT is for the wrong region.\n")
+		fmt.Fprintf(os.Stderr, "      Check your bucket's region and update S3_ENDPOINT and AWS_REGION.\n")
+	} else {
+		fmt.Fprintf(os.Stderr, "Check S3_BUCKET, S3_ENDPOINT, and credentials in your .env file.\n")
+	}
 }
 
 // endpointFromRedirect checks whether err is an HTTP 301 response carrying a
