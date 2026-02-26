@@ -10,6 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// writeTempEnv creates a temporary .env file containing contents and returns
+// its path. The file is automatically removed when the test ends.
+func writeTempEnv(t *testing.T, contents string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+	return path
+}
+
 // ---------------------------------------------------------------------------
 // validateBucketName
 // ---------------------------------------------------------------------------
@@ -298,4 +308,143 @@ func TestLoadConfigFromEnv_PathStyle(t *testing.T) {
 			assert.Equal(t, tc.wantPathStyle, cfg.PathStyle)
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// parseDotEnv
+// ---------------------------------------------------------------------------
+
+func TestParseDotEnv(t *testing.T) {
+	tests := []struct {
+		name     string
+		contents string
+		want     map[string]string
+		wantErr  bool
+	}{
+		{
+			name: "simple key=value pairs",
+			contents: "S3_BUCKET=my-bucket\nAWS_REGION=us-east-1\n",
+			want: map[string]string{
+				"S3_BUCKET":  "my-bucket",
+				"AWS_REGION": "us-east-1",
+			},
+		},
+		{
+			name:     "comments and blank lines are ignored",
+			contents: "# This is a comment\n\nS3_BUCKET=my-bucket\n\n# another comment\n",
+			want:     map[string]string{"S3_BUCKET": "my-bucket"},
+		},
+		{
+			name:     "export prefix is stripped",
+			contents: "export S3_BUCKET=my-bucket\n",
+			want:     map[string]string{"S3_BUCKET": "my-bucket"},
+		},
+		{
+			name:     "double-quoted value stripped",
+			contents: `S3_BUCKET="my-bucket"` + "\n",
+			want:     map[string]string{"S3_BUCKET": "my-bucket"},
+		},
+		{
+			name:     "single-quoted value stripped",
+			contents: "S3_BUCKET='my-bucket'\n",
+			want:     map[string]string{"S3_BUCKET": "my-bucket"},
+		},
+		{
+			name:     "unquoted value preserved",
+			contents: "S3_BUCKET=my-bucket\n",
+			want:     map[string]string{"S3_BUCKET": "my-bucket"},
+		},
+		{
+			name:     "line without equals is skipped",
+			contents: "NO_EQUALS\nS3_BUCKET=ok\n",
+			want:     map[string]string{"S3_BUCKET": "ok"},
+		},
+		{
+			name:     "empty value",
+			contents: "S3_ENDPOINT=\n",
+			want:     map[string]string{"S3_ENDPOINT": ""},
+		},
+		{
+			name:     "value with embedded equals sign",
+			contents: "TOKEN=abc=def\n",
+			want:     map[string]string{"TOKEN": "abc=def"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeTempEnv(t, tc.contents)
+			got, err := parseDotEnv(path)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	t.Run("non-existent file returns error", func(t *testing.T) {
+		_, err := parseDotEnv("/does/not/exist.env")
+		require.Error(t, err)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// envOrFile
+// ---------------------------------------------------------------------------
+
+func TestEnvOrFile(t *testing.T) {
+	fileVars := map[string]string{
+		"MY_KEY": "from-file",
+	}
+
+	t.Run("env var set returns env value", func(t *testing.T) {
+		t.Setenv("MY_KEY", "from-env")
+		assert.Equal(t, "from-env", envOrFile("MY_KEY", fileVars))
+	})
+
+	t.Run("env var explicitly empty returns empty string", func(t *testing.T) {
+		t.Setenv("MY_KEY", "")
+		// LookupEnv("MY_KEY") returns ("", true) — env wins, file value ignored.
+		assert.Equal(t, "", envOrFile("MY_KEY", fileVars))
+	})
+
+	t.Run("env var unset falls back to file value", func(t *testing.T) {
+		t.Setenv("MY_KEY", "")
+		// Unset it after Setenv so LookupEnv returns ("", false).
+		os.Unsetenv("MY_KEY")
+		assert.Equal(t, "from-file", envOrFile("MY_KEY", fileVars))
+	})
+
+	t.Run("key absent in both returns empty string", func(t *testing.T) {
+		os.Unsetenv("ABSENT_KEY")
+		assert.Equal(t, "", envOrFile("ABSENT_KEY", fileVars))
+	})
+}
+
+// ---------------------------------------------------------------------------
+// findConfigFile
+// ---------------------------------------------------------------------------
+
+func TestFindConfigFile(t *testing.T) {
+	t.Run("S3_CONFIG_FILE env var wins", func(t *testing.T) {
+		customPath := writeTempEnv(t, "")
+		t.Setenv("S3_CONFIG_FILE", customPath)
+		got := findConfigFile()
+		assert.Equal(t, customPath, got)
+	})
+
+	t.Run("returns empty string when no config file exists and env unset", func(t *testing.T) {
+		// Work in a fresh temp dir that has no .env file.
+		dir := t.TempDir()
+		orig, err := os.Getwd()
+		require.NoError(t, err)
+		require.NoError(t, os.Chdir(dir))
+		t.Cleanup(func() { _ = os.Chdir(orig) })
+
+		os.Unsetenv("S3_CONFIG_FILE")
+		got := findConfigFile()
+		assert.Equal(t, "", got)
+	})
 }
