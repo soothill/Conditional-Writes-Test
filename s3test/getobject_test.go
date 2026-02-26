@@ -94,6 +94,26 @@ func TestGetObjectConditionalReads(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, "get-me", string(body))
 		})
+
+		t.Run("Wildcard", func(t *testing.T) {
+			key := uniqueKey(t, "get-ifnonematch-wildcard")
+			cleanupKey(t, testClient, testBucket, key)
+
+			putObject(t, testClient, testBucket, key, "get-me")
+
+			ctx, cancel := testContext(t)
+			defer cancel()
+
+			// RFC 7232: If-None-Match: * means "the condition is false if any
+			// representation of the resource currently exists". Since the object
+			// exists, S3 should return 304 Not Modified.
+			_, err := testClient.GetObject(ctx, &s3.GetObjectInput{
+				Bucket:      aws.String(testBucket),
+				Key:         aws.String(key),
+				IfNoneMatch: aws.String("*"),
+			})
+			requireNotModified(t, err)
+		})
 	})
 
 	t.Run("IfModifiedSince", func(t *testing.T) {

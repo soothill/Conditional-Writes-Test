@@ -87,6 +87,26 @@ func TestHeadObjectConditionalReads(t *testing.T) {
 			require.NotNil(t, out.ETag)
 			assert.Equal(t, etag, *out.ETag)
 		})
+
+		t.Run("Wildcard", func(t *testing.T) {
+			key := uniqueKey(t, "head-ifnonematch-wildcard")
+			cleanupKey(t, testClient, testBucket, key)
+
+			putObject(t, testClient, testBucket, key, "head-me")
+
+			ctx, cancel := testContext(t)
+			defer cancel()
+
+			// RFC 7232: If-None-Match: * means "the condition is false if any
+			// representation of the resource currently exists". Since the object
+			// exists, S3 should return 304 Not Modified.
+			_, err := testClient.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:      aws.String(testBucket),
+				Key:         aws.String(key),
+				IfNoneMatch: aws.String("*"),
+			})
+			requireNotModified(t, err)
+		})
 	})
 
 	t.Run("IfModifiedSince", func(t *testing.T) {

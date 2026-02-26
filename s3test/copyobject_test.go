@@ -4,6 +4,7 @@ package s3test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -235,6 +236,110 @@ func TestCopyObjectConditionalWrites(t *testing.T) {
 			})
 			require.NoError(t, err, "CopyObject with non-matching CopySourceIfNoneMatch should succeed")
 			require.NotNil(t, out.CopyObjectResult)
+		})
+	})
+
+	t.Run("CopySourceIfModifiedSince", func(t *testing.T) {
+		t.Run("Modified", func(t *testing.T) {
+			srcKey := uniqueKey(t, "copysrc-ifmodified-src-yes")
+			dstKey := uniqueKey(t, "copysrc-ifmodified-dst-yes")
+			cleanupKey(t, testClient, testBucket, srcKey)
+			cleanupKey(t, testClient, testBucket, dstKey)
+
+			putObject(t, testClient, testBucket, srcKey, "source-content")
+
+			ctx, cancel := testContext(t)
+			defer cancel()
+
+			// Source was created (modified) well after 2020-01-01, so the copy
+			// should proceed because the source has been modified since then.
+			pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+			out, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:                   aws.String(testBucket),
+				Key:                      aws.String(dstKey),
+				CopySource:               aws.String(copySource(testBucket, srcKey)),
+				CopySourceIfModifiedSince: aws.Time(pastTime),
+			})
+			require.NoError(t, err, "CopyObject with CopySourceIfModifiedSince in the past should succeed")
+			require.NotNil(t, out.CopyObjectResult)
+		})
+
+		t.Run("NotModified", func(t *testing.T) {
+			srcKey := uniqueKey(t, "copysrc-ifmodified-src-no")
+			dstKey := uniqueKey(t, "copysrc-ifmodified-dst-no")
+			cleanupKey(t, testClient, testBucket, srcKey)
+			cleanupKey(t, testClient, testBucket, dstKey)
+
+			putObject(t, testClient, testBucket, srcKey, "source-content")
+
+			// AWS S3 evaluates CopySourceIfModifiedSince at 1-second HTTP date
+			// granularity. We must wait until the current second rolls over so
+			// that the timestamp we pass is strictly after the source object's
+			// LastModified, ensuring the "not modified since" condition is true.
+			nextSecond := time.Now().Truncate(time.Second).Add(time.Second)
+			time.Sleep(time.Until(nextSecond) + 50*time.Millisecond)
+			afterCreate := time.Now()
+
+			ctx, cancel := testContext(t)
+			defer cancel()
+
+			// Source has not been modified since afterCreate → copy should fail.
+			_, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:                   aws.String(testBucket),
+				Key:                      aws.String(dstKey),
+				CopySource:               aws.String(copySource(testBucket, srcKey)),
+				CopySourceIfModifiedSince: aws.Time(afterCreate),
+			})
+			requirePreconditionFailed(t, err)
+		})
+	})
+
+	t.Run("CopySourceIfUnmodifiedSince", func(t *testing.T) {
+		t.Run("Unmodified", func(t *testing.T) {
+			srcKey := uniqueKey(t, "copysrc-ifunmodified-src-yes")
+			dstKey := uniqueKey(t, "copysrc-ifunmodified-dst-yes")
+			cleanupKey(t, testClient, testBucket, srcKey)
+			cleanupKey(t, testClient, testBucket, dstKey)
+
+			putObject(t, testClient, testBucket, srcKey, "source-content")
+
+			ctx, cancel := testContext(t)
+			defer cancel()
+
+			// Use a timestamp in the future: the source has not been modified
+			// since then, so the copy condition is satisfied.
+			futureTime := time.Now().Add(24 * time.Hour)
+			out, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:                     aws.String(testBucket),
+				Key:                        aws.String(dstKey),
+				CopySource:                 aws.String(copySource(testBucket, srcKey)),
+				CopySourceIfUnmodifiedSince: aws.Time(futureTime),
+			})
+			require.NoError(t, err, "CopyObject with CopySourceIfUnmodifiedSince in the future should succeed")
+			require.NotNil(t, out.CopyObjectResult)
+		})
+
+		t.Run("Modified", func(t *testing.T) {
+			srcKey := uniqueKey(t, "copysrc-ifunmodified-src-no")
+			dstKey := uniqueKey(t, "copysrc-ifunmodified-dst-no")
+			cleanupKey(t, testClient, testBucket, srcKey)
+			cleanupKey(t, testClient, testBucket, dstKey)
+
+			putObject(t, testClient, testBucket, srcKey, "source-content")
+
+			ctx, cancel := testContext(t)
+			defer cancel()
+
+			// Source was created (modified) well after 2020-01-01, so it has
+			// been modified since that time → copy condition is not satisfied.
+			pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+			_, err := testClient.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:                     aws.String(testBucket),
+				Key:                        aws.String(dstKey),
+				CopySource:                 aws.String(copySource(testBucket, srcKey)),
+				CopySourceIfUnmodifiedSince: aws.Time(pastTime),
+			})
+			requirePreconditionFailed(t, err)
 		})
 	})
 }

@@ -3,9 +3,11 @@
 package s3test
 
 import (
+	"io"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +23,19 @@ func TestMultipartConditionalWrites(t *testing.T) {
 			require.NoError(t, err, "CompleteMultipartUpload with IfNoneMatch=* to new key should succeed")
 			require.NotNil(t, out.ETag, "response should include ETag")
 			assert.NotEmpty(t, *out.ETag)
+
+			// Verify the uploaded body round-trips correctly.
+			ctx, cancel := testContext(t)
+			defer cancel()
+			getOut, getErr := testClient.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: aws.String(testBucket),
+				Key:    aws.String(key),
+			})
+			require.NoError(t, getErr, "GetObject after multipart upload should succeed")
+			defer getOut.Body.Close()
+			gotBody, readErr := io.ReadAll(getOut.Body)
+			require.NoError(t, readErr)
+			assert.Equal(t, "multipart-body", string(gotBody), "body should round-trip correctly")
 		})
 
 		t.Run("ExistingKey", func(t *testing.T) {
@@ -63,6 +78,19 @@ func TestMultipartConditionalWrites(t *testing.T) {
 			require.NoError(t, err, "CompleteMultipartUpload with correct IfMatch ETag should succeed")
 			require.NotNil(t, out.ETag)
 			assert.NotEqual(t, etag, *out.ETag, "new ETag should differ from original")
+
+			// Verify the updated body is durably stored.
+			ctx, cancel := testContext(t)
+			defer cancel()
+			getOut, getErr := testClient.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: aws.String(testBucket),
+				Key:    aws.String(key),
+			})
+			require.NoError(t, getErr, "GetObject after multipart upload should succeed")
+			defer getOut.Body.Close()
+			gotBody, readErr := io.ReadAll(getOut.Body)
+			require.NoError(t, readErr)
+			assert.Equal(t, "updated-via-mpu", string(gotBody), "body should reflect the multipart upload content")
 		})
 
 		t.Run("WrongETag", func(t *testing.T) {
